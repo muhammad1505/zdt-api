@@ -83,6 +83,11 @@ def create_app():
     if os.path.exists(admin_dist):
         from flask import send_from_directory
         
+        @app.route('/')
+        def redirect_to_admin():
+            from flask import redirect
+            return redirect('/admin/')
+
         @app.route('/admin/')
         @app.route('/admin/<path:path>')
         def serve_admin(path='index.html'):
