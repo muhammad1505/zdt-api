@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ZDT API Server - Standalone server for ZDT Mobile app."""
+"""ZDT API Server - Standalone API server for ZDT Mobile app."""
 
 import os
 import sys
@@ -9,6 +9,9 @@ import logging
 
 from flask import Flask
 from flask_cors import CORS
+
+# Import config at module level
+from config import config as app_config
 
 # Set up logging
 logging.basicConfig(
@@ -24,13 +27,12 @@ def create_app():
     
     # Initialize database
     from database import init_db, create_admin_user
-    from config import config
     
     try:
         init_db()
         # Create default admin user from config.env if not exists
-        web_user = config.get_web_user()
-        web_pass = config.get_web_pass()
+        web_user = app_config.get_web_user()
+        web_pass = app_config.get_web_pass()
         if web_user and web_pass:
             create_admin_user(web_user, web_pass)
         logger.info('Database initialized successfully')
@@ -88,17 +90,14 @@ if __name__ == '__main__':
     
     print(f'''
 ╔══════════════════════════════════════════════╗
-║        ZDT API Server v{config.get_version():<8}           ║
+║        ZDT API Server v{app_config.get_version():<8}           ║
 ║                                              ║
 ║  🌐 Listening on http://{host}:{port}              ║
-║  📂 Target: {config.get_target_dir():<20}  ║
+║  📂 Target: {app_config.get_target_dir():<20}  ║
 ║  🔐 Auth: X-API-Key / Bearer Token           ║
 ║                                              ║
 ║  🏠 Health: http://localhost:{port}/api/health    ║
 ╚══════════════════════════════════════════════╝
     ''')
     
-    from config import config
     app.run(host=host, port=port, debug=debug)
-else:
-    from config import config

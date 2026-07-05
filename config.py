@@ -50,10 +50,18 @@ class ZdtConfig:
         return self._config.get(key, default)
     
     def get_version(self):
-        """Read version from VERSION file or config."""
+        """Read version - prioritize zdt-api/VERSION, then config.env, then parent VERSION."""
+        # Check zdt-api's own VERSION file first
+        my_dir = os.path.dirname(os.path.abspath(__file__))
+        my_version = os.path.join(my_dir, 'VERSION')
+        if os.path.exists(my_version):
+            with open(my_version) as f:
+                return f.read().strip()
+        # Check config
         version = self.get('ZDT_VERSION')
         if version:
             return version
+        # Fallback to parent project VERSION
         if os.path.exists(self.version_path):
             with open(self.version_path) as f:
                 return f.read().strip()

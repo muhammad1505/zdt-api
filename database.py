@@ -58,7 +58,7 @@ def init_db():
             expired_at TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_used TIMESTAMP,
-            created_by INTEGER REFERENCES users(id)
+            created_by INTEGER
         );
         
         CREATE TABLE IF NOT EXISTS activity_logs (
