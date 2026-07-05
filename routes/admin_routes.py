@@ -333,16 +333,12 @@ def vpn_status():
 @requires_admin
 def vpn_connect():
     try:
-        # Ensure xl2tpd is running
-        subprocess.run(['systemctl', 'start', SVC_VPN_UNIT],
-                       capture_output=True, timeout=10)
-        # Trigger connection
         result = subprocess.run(
-            ['bash', '-c', 'echo "c zdtvpn" > /var/run/xl2tpd/l2tp-control'],
-            capture_output=True, text=True, timeout=5
+            ['sudo', '/usr/local/bin/zdt-vpn.sh', 'connect'],
+            capture_output=True, text=True, timeout=15
         )
         if result.returncode != 0:
-            return jsonify({'error': 'Gagal connect VPN: ' + result.stderr}), 500
+            return jsonify({'error': 'Gagal connect VPN: ' + result.stderr.strip()}), 500
         return jsonify({'success': True, 'message': 'VPN connect initiated'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -353,11 +349,11 @@ def vpn_connect():
 def vpn_disconnect():
     try:
         result = subprocess.run(
-            ['bash', '-c', 'echo "d zdtvpn" > /var/run/xl2tpd/l2tp-control'],
-            capture_output=True, text=True, timeout=5
+            ['sudo', '/usr/local/bin/zdt-vpn.sh', 'disconnect'],
+            capture_output=True, text=True, timeout=15
         )
         if result.returncode != 0:
-            return jsonify({'error': 'Gagal disconnect VPN: ' + result.stderr}), 500
+            return jsonify({'error': 'Gagal disconnect VPN: ' + result.stderr.strip()}), 500
         return jsonify({'success': True, 'message': 'VPN disconnected'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -393,7 +389,7 @@ def vpn_set_config():
 # === SERVICE MANAGEMENT ===
 
 ZDT_SERVICES = [
-    'zdt-api', 'zdt-web', 'zdt-telegram', 'zdt-scheduler', 'zdt-watch', 'zdt-tunnel'
+    'zdt-web', 'zdt-scheduler', 'zdt-telegram', 'zdt-tunnel'
 ]
 
 @admin_bp.route('/api/admin/services', methods=['GET'])
