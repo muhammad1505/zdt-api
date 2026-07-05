@@ -1,0 +1,23 @@
+:root {
+  --bg-primary: #09090E;
+  --bg-surface: #13131A;
+  --bg-hover: #1F1F2C;
+  --text-primary: #E0E0FF;
+  --text-muted: #6B6B80;
+  --accent-cyan: #00F0FF;
+  --accent-magenta: #FF003C;
+  --accent-yellow: #FCE205;
+  --border-color: #2A2A3C;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }

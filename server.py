@@ -77,6 +77,21 @@ def create_app():
         logger.exception('Unhandled exception')
         return jsonify({'error': 'Internal server error', 'message': str(e)}), 500
     
+    # Serve admin dashboard static files
+    
+    admin_dist = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'admin-dashboard', 'dist')
+    if os.path.exists(admin_dist):
+        from flask import send_from_directory
+        
+        @app.route('/admin/')
+        @app.route('/admin/<path:path>')
+        def serve_admin(path='index.html'):
+            if path and os.path.exists(os.path.join(admin_dist, path)):
+                return send_from_directory(admin_dist, path)
+            return send_from_directory(admin_dist, 'index.html')
+        
+        logger.info(f'Admin dashboard served at /admin/ from {admin_dist}')
+    
     logger.info('ZDT API Server started')
     return app
 
