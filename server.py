@@ -82,7 +82,12 @@ def create_app():
     admin_dist = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'admin-dashboard', 'dist')
     if os.path.exists(admin_dist):
         from flask import send_from_directory
-        
+
+        @app.route('/favicon.ico')
+        @app.route('/favicon.svg')
+        def favicon():
+            return send_from_directory(admin_dist, 'favicon.svg')
+
         @app.route('/')
         def redirect_to_admin():
             from flask import redirect

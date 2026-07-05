@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getActivityLogs } from '../api/client';
 import { ScrollText, RefreshCw } from 'lucide-react';
 
@@ -16,6 +16,23 @@ export default function LogsPage() {
   };
 
   useEffect(() => { fetchLogs(); }, []);
+
+  // Auto-refresh every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      getActivityLogs(10).then(data => {
+        const newLogs = data.logs || [];
+        if (newLogs.length > 0) {
+          setLogs(prev => {
+            const existingIds = new Set(prev.map((l: any) => l.id || l.created_at));
+            const unique = newLogs.filter((l: any) => !existingIds.has(l.id || l.created_at));
+            return [...unique, ...prev];
+          });
+        }
+      }).catch(() => {});
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div>
