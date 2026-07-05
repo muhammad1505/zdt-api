@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { login as apiLogin } from '../api/client';
 
 interface AuthUser {

@@ -1,14 +1,15 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Key, Users, Settings, ScrollText,
-  LogOut, Server
+  LayoutDashboard, Key, Users, ScrollText,
+  LogOut, Server, Wrench, Sliders
 } from 'lucide-react';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/keys', icon: Key, label: 'API Keys' },
   { to: '/users', icon: Users, label: 'Users' },
-  { to: '/config', icon: Settings, label: 'Config' },
+  { to: '/tools', icon: Wrench, label: 'Tools' },
+  { to: '/settings', icon: Sliders, label: 'Settings' },
   { to: '/logs', icon: ScrollText, label: 'Logs' },
 ];
 

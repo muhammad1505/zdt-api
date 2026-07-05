@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getApiKeys, generateKey, revokeKey } from '../api/client';
 import type { ApiKey, KeyGenerateResponse } from '../types';
-import { Key, Plus, Trash2, Copy, Check, AlertCircle } from 'lucide-react';
+import { Key, Plus, Trash2, Copy, Check } from 'lucide-react';
 
 export default function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);

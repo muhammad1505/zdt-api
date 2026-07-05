@@ -176,6 +176,8 @@ def get_smart_api_key_string(key_id, secret, host, port, label, role, expired_at
 
 def parse_smart_api_key(encoded):
     """Parse Smart API Key from Base64 format."""
+    if not encoded or not isinstance(encoded, str):
+        return None
     try:
         raw = base64.b64decode(encoded.encode()).decode()
         parts = raw.split('|')
@@ -191,8 +193,7 @@ def parse_smart_api_key(encoded):
             'role': parts[6] if len(parts) > 6 else 'full',
             'expired': parts[7] if len(parts) > 7 else ''
         }
-    except Exception as e:
-        print(f'[parse_smart_api_key] Error: {e}')
+    except Exception:
         return None
 
 

@@ -56,7 +56,7 @@ export default function DashboardPage() {
   }
 
   const memUsed = data.memory.total_gb - data.memory.available_gb;
-  const diskUsedPercent = data.disk.total > 0
+  const diskUsedPercent = data.disk && data.disk.total > 0
     ? Math.round((data.disk.used / data.disk.total) * 100) : 0;
 
   return (
@@ -82,8 +82,8 @@ export default function DashboardPage() {
         />
         <StatCard
           icon={HardDrive} label="Disk"
-          value={`${data.disk.used} / ${data.disk.total} GB`}
-          sub={`${diskUsedPercent}% used · ${data.disk.free} GB free`}
+          value={`${data.disk?.used || 0} / ${data.disk?.total || 0} GB`}
+          sub={`${diskUsedPercent}% used · ${data.disk?.free || 0} GB free`}
           color="#FF003C"
         />
         <StatCard
@@ -123,7 +123,7 @@ export default function DashboardPage() {
           padding: 20, border: '1px solid #2A2A3C'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <Wifi color={data.vpn.connected ? '#00F0FF' : '#FF003C'} size={20} />
+            <Wifi color={data.vpn?.connected ? '#00F0FF' : '#FF003C'} size={20} />
             <h3 style={{ color: '#E0E0FF', fontSize: 14, margin: 0 }}>VPN Connection</h3>
           </div>
           <div style={{
@@ -132,9 +132,9 @@ export default function DashboardPage() {
             <span style={{ color: '#6B6B80', fontSize: 13 }}>Status</span>
             <span style={{
               float: 'right',
-              color: data.vpn.connected ? '#00F0FF' : '#FF003C', fontSize: 13
+              color: data.vpn?.connected ? '#00F0FF' : '#FF003C', fontSize: 13
             }}>
-              {data.vpn.connected ? 'Connected' : 'Disconnected'}
+              {data.vpn?.connected ? 'Connected' : 'Disconnected'}
             </span>
           </div>
           {data.vpn.ip && (

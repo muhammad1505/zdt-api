@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, g
 import os
 import subprocess
+import hashlib
 
 from auth import requires_admin
 from database import (
@@ -38,8 +39,7 @@ def create_key():
         if not host:
             return jsonify({'error': 'Host is required'}), 400
         
-        user_id = getattr(request, 'g', None)
-        user_id = getattr(user_id, 'user', {}).get('user_id', 0) if hasattr(request, 'g') else 0
+        user_id = g.user.get('user_id', 0) if hasattr(g, 'user') else 0
         
         key_id, secret = generate_api_key(host, port, label, role, expired_days, user_id)
         
@@ -102,6 +102,48 @@ def add_user():
         return jsonify({'error': str(e)}), 500
 
 
+@admin_bp.route('/api/admin/users/<int:user_id>', methods=['PUT'])
+@requires_admin
+def update_user(user_id):
+    """Update user fields (username, password, role, label, active)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        updates = []
+        params = []
+        
+        if 'username' in data and data['username']:
+            updates.append('username = ?')
+            params.append(data['username'].strip())
+        if 'role' in data and data['role']:
+            if data['role'] not in ['admin', 'operator', 'full']:
+                return jsonify({'error': 'Role harus admin, operator, atau full'}), 400
+            updates.append('role = ?')
+            params.append(data['role'].strip())
+        if 'label' in data:
+            updates.append('label = ?')
+            params.append(data['label'].strip())
+        if 'active' in data:
+            updates.append('active = ?')
+            params.append(1 if data['active'] else 0)
+        if 'password' in data and data['password']:
+            if len(data['password']) < 4:
+                return jsonify({'error': 'Password minimal 4 karakter'}), 400
+            pw_hash = hashlib.sha256(data['password'].encode()).hexdigest()
+            updates.append('password_hash = ?')
+            params.append(pw_hash)
+        
+        if not updates:
+            return jsonify({'error': 'Tidak ada field yang diupdate'}), 400
+        
+        conn = get_connection()
+        params.append(user_id)
+        conn.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+        return jsonify({'success': True, 'message': 'User updated'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @admin_bp.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
 @requires_admin
 def remove_user(user_id):
@@ -129,12 +171,17 @@ def admin_dashboard():
             pass
         
         target_dir = config.get_target_dir()
-        disk = {}
-        if os.path.exists(target_dir):
-            stat = os.statvfs(target_dir)
-            disk['total'] = round(stat.f_blocks * stat.f_frsize / (1024**3), 1)
-            disk['free'] = round(stat.f_bavail * stat.f_frsize / (1024**3), 1)
-            disk['used'] = round(disk['total'] - disk['free'], 1)
+        disk = {'total': 0, 'free': 0, 'used': 0}
+        try:
+            if target_dir and os.path.exists(target_dir):
+                stat = os.statvfs(target_dir)
+                disk['total'] = round(stat.f_blocks * stat.f_frsize / (1024**3), 1)
+                disk['free'] = round(stat.f_bavail * stat.f_frsize / (1024**3), 1)
+                disk['used'] = round(disk['total'] - disk['free'], 1)
+            else:
+                disk['note'] = 'Target directory not found'
+        except Exception as e:
+            disk['note'] = f'Disk error: {str(e)}'
         
         uptime = 0
         try:
@@ -181,17 +228,18 @@ def admin_dashboard():
 @requires_admin
 def get_config():
     config_path = config.config_path
-    if not os.path.exists(config_path):
-        return jsonify({'config': {}})
     result = {}
-    with open(config_path) as f:
-        for line in f:
-            line = line.strip()
-            if line and '=' in line:
-                key, val = line.split('=', 1)
-                if any(k in key.upper() for k in ['PASS', 'SECRET', 'TOKEN', 'KEY']):
-                    val = '********'
-                result[key.strip()] = val.strip().strip('"').strip("'")
+    if config_path and os.path.exists(config_path):
+        with open(config_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and '=' in line:
+                    key, val = line.split('=', 1)
+                    if any(k in key.upper() for k in ['PASS', 'SECRET', 'TOKEN', 'KEY']):
+                        val = '********'
+                    result[key.strip()] = val.strip().strip('"').strip("'")
+    if not result:
+        result['_info'] = 'Tidak ada konfigurasi. Buat config.env atau tambah key/value baru.'
     return jsonify({'config': result})
 
 
@@ -223,8 +271,8 @@ def activity_logs():
 @requires_admin
 def restart_api():
     try:
-        subprocess.Popen(['systemctl', 'restart', 'zdt-api'], start_new_session=True)
-        return jsonify({'success': True, 'message': 'API server restart initiated'})
+        subprocess.Popen(['systemctl', 'restart', 'zdt-api', '--no-block'], start_new_session=True)
+        return jsonify({'success': True, 'message': 'API server restart initiated (delayed)'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -238,5 +286,170 @@ def system_status():
             capture_output=True, text=True, timeout=5
         )
         return jsonify({'status': result.stdout.strip()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# === VPN MANAGEMENT ===
+
+SVC_VPN_UNIT = 'xl2tpd'
+
+@admin_bp.route('/api/admin/vpn/status', methods=['GET'])
+@requires_admin
+def vpn_status():
+    try:
+        # Check ppp0 interface
+        ppp = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
+                             capture_output=True, text=True, timeout=5)
+        connected = ppp.returncode == 0
+        vpn_ip = ''
+        if connected:
+            for line in ppp.stdout.split('\n'):
+                if 'inet ' in line:
+                    vpn_ip = line.strip().split()[1]
+
+        # Check xl2tpd service
+        svc = subprocess.run(['systemctl', 'is-active', SVC_VPN_UNIT],
+                             capture_output=True, text=True, timeout=5)
+        service_active = svc.stdout.strip() == 'active'
+
+        # Check if xl2tpd is enabled
+        enabled = subprocess.run(['systemctl', 'is-enabled', SVC_VPN_UNIT],
+                                 capture_output=True, text=True, timeout=5)
+        service_enabled = enabled.stdout.strip() == 'enabled'
+
+        return jsonify({
+            'connected': connected,
+            'ip': vpn_ip,
+            'interface': 'ppp0',
+            'service_active': service_active,
+            'service_enabled': service_enabled,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/vpn/connect', methods=['POST'])
+@requires_admin
+def vpn_connect():
+    try:
+        # Ensure xl2tpd is running
+        subprocess.run(['systemctl', 'start', SVC_VPN_UNIT],
+                       capture_output=True, timeout=10)
+        # Trigger connection
+        result = subprocess.run(
+            ['bash', '-c', 'echo "c zdtvpn" > /var/run/xl2tpd/l2tp-control'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode != 0:
+            return jsonify({'error': 'Gagal connect VPN: ' + result.stderr}), 500
+        return jsonify({'success': True, 'message': 'VPN connect initiated'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/vpn/disconnect', methods=['POST'])
+@requires_admin
+def vpn_disconnect():
+    try:
+        result = subprocess.run(
+            ['bash', '-c', 'echo "d zdtvpn" > /var/run/xl2tpd/l2tp-control'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode != 0:
+            return jsonify({'error': 'Gagal disconnect VPN: ' + result.stderr}), 500
+        return jsonify({'success': True, 'message': 'VPN disconnected'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/vpn/config', methods=['GET'])
+@requires_admin
+def vpn_get_config():
+    try:
+        return jsonify({
+            'server': config.get('VPN_SERVER', 'remote4.vpnmurahjogja.my.id'),
+            'username': config.get('VPN_USERNAME', 'gemini'),
+            'password': '********' if config.get('VPN_PASSWORD') else '',
+            'enabled': config.get('VPN_AUTOSTART', 'false'),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/vpn/config', methods=['POST'])
+@requires_admin
+def vpn_set_config():
+    try:
+        data = request.get_json(silent=True) or {}
+        for key in ['VPN_SERVER', 'VPN_USERNAME', 'VPN_PASSWORD', 'VPN_AUTOSTART']:
+            if key in data:
+                config.update_config(key, data[key])
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# === SERVICE MANAGEMENT ===
+
+ZDT_SERVICES = [
+    'zdt-api', 'zdt-web', 'zdt-telegram', 'zdt-scheduler', 'zdt-watch', 'zdt-tunnel'
+]
+
+@admin_bp.route('/api/admin/services', methods=['GET'])
+@requires_admin
+def list_services():
+    try:
+        services = []
+        for name in ZDT_SERVICES:
+            unit = name + '.service'
+            active = subprocess.run(['systemctl', 'is-active', unit],
+                                    capture_output=True, text=True, timeout=5)
+            enabled = subprocess.run(['systemctl', 'is-enabled', unit],
+                                     capture_output=True, text=True, timeout=5)
+            services.append({
+                'name': name,
+                'active': active.stdout.strip(),
+                'enabled': enabled.stdout.strip(),
+            })
+        return jsonify({'services': services})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/system/shutdown', methods=['POST'])
+@requires_admin
+def shutdown_server():
+    try:
+        subprocess.Popen(['systemctl', 'poweroff'], start_new_session=True)
+        return jsonify({'success': True, 'message': 'Server shutdown initiated'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/services/<name>/<action>', methods=['POST'])
+@requires_admin
+def manage_service(name, action):
+    try:
+        if name not in ZDT_SERVICES:
+            return jsonify({'error': f'Unknown service: {name}'}), 400
+        if action not in ('start', 'stop', 'restart', 'enable', 'disable'):
+            return jsonify({'error': f'Invalid action: {action}'}), 400
+
+        unit = name + '.service'
+
+        # Special handling for zdt-api restart (don't block)
+        if name == 'zdt-api' and action == 'restart':
+            subprocess.Popen(['systemctl', 'restart', unit, '--no-block'],
+                             start_new_session=True)
+            return jsonify({'success': True, 'message': f'{name} restart initiated (delayed)'})
+
+        result = subprocess.run(['systemctl', action, unit],
+                                capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            return jsonify({'error': result.stderr.strip() or f'Gagal {action} {name}'}), 500
+
+        msg = f'{name} {action} berhasil'
+        return jsonify({'success': True, 'message': msg})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
