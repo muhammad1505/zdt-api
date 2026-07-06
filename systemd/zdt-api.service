@@ -1,13 +1,15 @@
 [Unit]
-Description=ZDT API Server v1.0.0 - Standalone API for ZDT Mobile
+Description=ZDT API Server - Standalone API for ZDT Mobile
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/root/zdt-project/zdt-api
-ExecStart=/usr/local/bin/gunicorn --bind 0.0.0.0:2000 --workers 2 --timeout 120 server:app
+User=__USER__
+Group=__USER__
+WorkingDirectory=__ZDT_API_DIR__
+# Single worker because SQLite doesn't support concurrent writes from multiple processes
+ExecStart=__PYTHON__ -m gunicorn --bind 0.0.0.0:2000 --workers 1 --timeout 120 server:app
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=on-failure
 RestartSec=5

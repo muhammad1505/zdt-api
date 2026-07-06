@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Key, Users, ScrollText,
+  LayoutDashboard, Key, Users, ScrollText, Folder,
   LogOut, Server, Wrench, Sliders
 } from 'lucide-react';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/files', icon: Folder, label: 'Files' },
   { to: '/keys', icon: Key, label: 'API Keys' },
   { to: '/users', icon: Users, label: 'Users' },
   { to: '/tools', icon: Wrench, label: 'Tools' },

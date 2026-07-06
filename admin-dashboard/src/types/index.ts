@@ -29,6 +29,12 @@ export interface DashboardData {
   services: Record<string, boolean>;
   vpn: { connected: boolean; ip: string };
   version: string;
+  target_dir: string;
+  file_count: number;
+  hostname: string;
+  arch: string;
+  python: string;
+  ips: string[];
 }
 
 export interface KeyGenerateResponse {

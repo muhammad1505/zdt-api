@@ -2,15 +2,19 @@ from flask import Blueprint, request, jsonify, g
 import os
 import subprocess
 import hashlib
+import logging
+from werkzeug.security import generate_password_hash
 
 from auth import requires_admin
 from database import (
-    get_all_api_keys, generate_api_key, revoke_api_key,
+    get_all_api_keys, generate_api_key, revoke_api_key, delete_api_key,
     get_all_users, create_user, delete_user,
-    get_activity_logs, get_smart_api_key_string, get_connection
+    get_activity_logs, get_smart_api_key_string, get_connection,
+    log_vpn_event
 )
 from config import config
 
+logger = logging.getLogger(__name__)
 admin_bp = Blueprint('admin', __name__)
 
 
@@ -68,6 +72,10 @@ def create_key():
 @admin_bp.route('/api/admin/keys/<key_id>', methods=['DELETE'])
 @requires_admin
 def delete_key(key_id):
+    hard = request.args.get('hard', '').lower() == 'true'
+    if hard:
+        delete_api_key(key_id)
+        return jsonify({'success': True, 'message': 'API Key permanently deleted'})
     revoke_api_key(key_id)
     return jsonify({'success': True, 'message': 'API Key revoked'})
 
@@ -128,7 +136,7 @@ def update_user(user_id):
         if 'password' in data and data['password']:
             if len(data['password']) < 4:
                 return jsonify({'error': 'Password minimal 4 karakter'}), 400
-            pw_hash = hashlib.sha256(data['password'].encode()).hexdigest()
+            pw_hash = generate_password_hash(data['password'])
             updates.append('password_hash = ?')
             params.append(pw_hash)
         
@@ -167,8 +175,8 @@ def admin_dashboard():
                         mem['total'] = round(int(line.split()[1]) / 1024 / 1024, 1)
                     elif 'MemAvailable' in line:
                         mem['available'] = round(int(line.split()[1]) / 1024 / 1024, 1)
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to read meminfo: {e}")
         
         target_dir = config.get_target_dir()
         disk = {'total': 0, 'free': 0, 'used': 0}
@@ -187,8 +195,8 @@ def admin_dashboard():
         try:
             with open('/proc/uptime') as f:
                 uptime = round(float(f.read().split()[0]) / 3600, 1)
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to read uptime: {e}")
         
         net = {}
         try:
@@ -200,16 +208,46 @@ def admin_dashboard():
                 for line in result.stdout.split('\n'):
                     if 'inet ' in line:
                         net['vpn_ip'] = line.strip().split()[1]
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to check vpn ip: {e}")
         
         services = {}
         for s in ['zdt-watch.py', 'zdt-telegram.py', 'zdt-scheduler.py']:
             try:
                 r = subprocess.run(['pgrep', '-f', s], capture_output=True, timeout=3)
                 services[s.replace('.py', '')] = r.returncode == 0
-            except:
+            except Exception as e:
+                logger.warning(f"Failed to check status for {s}: {e}")
                 services[s.replace('.py', '')] = False
+
+        media_exts = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.mp4', '.mkv', '.webm'}
+        file_count = 0
+        try:
+            if os.path.exists(target_dir):
+                for root, _, files in os.walk(target_dir):
+                    for f in files:
+                        if os.path.splitext(f)[1].lower() in media_exts:
+                            file_count += 1
+        except Exception:
+            pass
+
+        import platform as _platform
+        hostname = _platform.node()
+        arch = _platform.machine()
+        pyver = _platform.python_version()
+
+        all_ips = []
+        try:
+            r = subprocess.run(['ip', '-4', 'addr', 'show'], capture_output=True, text=True, timeout=5)
+            for line in r.stdout.split('\n'):
+                parts = line.strip().split()
+                if 'inet' in parts:
+                    idx = parts.index('inet')
+                    ip = parts[idx + 1].split('/')[0]
+                    if ip != '127.0.0.1':
+                        all_ips.append(ip)
+        except Exception:
+            all_ips.append('N/A')
         
         return jsonify({
             'cpu': {'load_1m': cpu[0], 'load_5m': cpu[1], 'load_15m': cpu[2]},
@@ -218,7 +256,13 @@ def admin_dashboard():
             'uptime_hours': uptime,
             'services': services,
             'vpn': {'connected': 'vpn_ip' in net, 'ip': net.get('vpn_ip', '')},
-            'version': config.get_version()
+            'version': config.get_version(),
+            'target_dir': target_dir,
+            'file_count': file_count,
+            'hostname': hostname,
+            'arch': arch,
+            'python': pyver,
+            'ips': all_ips,
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -271,7 +315,7 @@ def activity_logs():
 @requires_admin
 def restart_api():
     try:
-        subprocess.Popen(['systemctl', 'restart', 'zdt-api', '--no-block'], start_new_session=True)
+        subprocess.Popen(['sudo', 'systemctl', 'restart', 'zdt-api', '--no-block'], start_new_session=True)
         return jsonify({'success': True, 'message': 'API server restart initiated (delayed)'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -282,12 +326,29 @@ def restart_api():
 def system_status():
     try:
         result = subprocess.run(
-            ['systemctl', 'is-active', 'zdt-api'],
+            ['sudo', 'systemctl', 'is-active', 'zdt-api'],
             capture_output=True, text=True, timeout=5
         )
-        return jsonify({'status': result.stdout.strip()})
+        if result.returncode == 0:
+            return jsonify({'status': result.stdout.strip()})
+    except Exception:
+        pass
+    try:
+        pg = subprocess.run(
+            ['pgrep', '-f', 'gunicorn.*server:app'],
+            capture_output=True, text=True, timeout=5
+        )
+        if pg.returncode == 0:
+            return jsonify({'status': 'active'})
+        pg2 = subprocess.run(
+            ['pgrep', '-f', 'python.*server.py'],
+            capture_output=True, text=True, timeout=5
+        )
+        if pg2.returncode == 0:
+            return jsonify({'status': 'active (dev)'})
+        return jsonify({'status': 'inactive'})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'status': 'unknown', 'error': str(e)})
 
 
 # === VPN MANAGEMENT ===
@@ -298,7 +359,7 @@ SVC_VPN_UNIT = 'xl2tpd'
 @requires_admin
 def vpn_status():
     try:
-        # Check ppp0 interface
+        # Check ppp0 interface (tidak perlu sudo)
         ppp = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
                              capture_output=True, text=True, timeout=5)
         connected = ppp.returncode == 0
@@ -308,15 +369,26 @@ def vpn_status():
                 if 'inet ' in line:
                     vpn_ip = line.strip().split()[1]
 
-        # Check xl2tpd service
-        svc = subprocess.run(['systemctl', 'is-active', SVC_VPN_UNIT],
-                             capture_output=True, text=True, timeout=5)
-        service_active = svc.stdout.strip() == 'active'
-
-        # Check if xl2tpd is enabled
-        enabled = subprocess.run(['systemctl', 'is-enabled', SVC_VPN_UNIT],
-                                 capture_output=True, text=True, timeout=5)
-        service_enabled = enabled.stdout.strip() == 'enabled'
+        # Check service status
+        service_active = False
+        service_enabled = False
+        try:
+            svc = subprocess.run(
+                ['systemctl', 'is-active', SVC_VPN_UNIT],
+                capture_output=True, text=True, timeout=3
+            )
+            service_active = svc.stdout.strip() == 'active'
+        except Exception:
+            pass
+        try:
+            enabled = subprocess.run(
+                ['systemctl', 'is-enabled', SVC_VPN_UNIT],
+                capture_output=True, text=True, timeout=3
+            )
+            service_enabled = enabled.stdout.strip() == 'enabled'
+        except Exception:
+            # Fallback: check symlink di /etc/systemd/system
+            service_enabled = os.path.islink(f'/etc/systemd/system/multi-user.target.wants/{SVC_VPN_UNIT}.service')
 
         return jsonify({
             'connected': connected,
@@ -338,9 +410,20 @@ def vpn_connect():
             capture_output=True, text=True, timeout=15
         )
         if result.returncode != 0:
+            log_vpn_event('connect', 'failed', result.stderr.strip())
             return jsonify({'error': 'Gagal connect VPN: ' + result.stderr.strip()}), 500
-        return jsonify({'success': True, 'message': 'VPN connect initiated'})
+        import time
+        for _ in range(10):
+            time.sleep(1)
+            ppp = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
+                                 capture_output=True, text=True, timeout=5)
+            if ppp.returncode == 0:
+                log_vpn_event('connect', 'success', 'VPN connected successfully')
+                return jsonify({'success': True, 'message': 'VPN connected'})
+        log_vpn_event('connect', 'failed', 'ppp0 did not appear after 10s')
+        return jsonify({'error': 'ppp0 interface did not appear after 10 seconds'}), 500
     except Exception as e:
+        log_vpn_event('connect', 'failed', str(e))
         return jsonify({'error': str(e)}), 500
 
 
@@ -353,9 +436,20 @@ def vpn_disconnect():
             capture_output=True, text=True, timeout=15
         )
         if result.returncode != 0:
+            log_vpn_event('disconnect', 'failed', result.stderr.strip())
             return jsonify({'error': 'Gagal disconnect VPN: ' + result.stderr.strip()}), 500
-        return jsonify({'success': True, 'message': 'VPN disconnected'})
+        import time
+        for _ in range(10):
+            time.sleep(1)
+            ppp = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
+                                 capture_output=True, text=True, timeout=5)
+            if ppp.returncode != 0:
+                log_vpn_event('disconnect', 'success', 'VPN disconnected successfully')
+                return jsonify({'success': True, 'message': 'VPN disconnected'})
+        log_vpn_event('disconnect', 'failed', 'ppp0 still present after 10s')
+        return jsonify({'error': 'ppp0 interface still present after 10 seconds'}), 500
     except Exception as e:
+        log_vpn_event('disconnect', 'failed', str(e))
         return jsonify({'error': str(e)}), 500
 
 
@@ -364,6 +458,7 @@ def vpn_disconnect():
 def vpn_get_config():
     try:
         return jsonify({
+            'success': True,
             'server': config.get('VPN_SERVER', 'remote4.vpnmurahjogja.my.id'),
             'username': config.get('VPN_USERNAME', 'gemini'),
             'password': '********' if config.get('VPN_PASSWORD') else '',
@@ -378,18 +473,62 @@ def vpn_get_config():
 def vpn_set_config():
     try:
         data = request.get_json(silent=True) or {}
+        
+        # Mapping lowercase payload keys to uppercase config keys
+        key_mapping = {
+            'server': 'VPN_SERVER',
+            'username': 'VPN_USERNAME',
+            'password': 'VPN_PASSWORD',
+            'enabled': 'VPN_AUTOSTART'
+        }
+        
+        mapped_data = {}
+        for k, v in data.items():
+            if k in key_mapping:
+                mapped_data[key_mapping[k]] = v
+            else:
+                mapped_data[k] = v
+                
+        # Validate VPN_SERVER
+        if 'VPN_SERVER' in mapped_data:
+            import re
+            val = str(mapped_data['VPN_SERVER']).strip()
+            if not val:
+                return jsonify({
+                    'success': False,
+                    'error': 'INVALID_VPN_CONFIG',
+                    'message': 'VPN Server cannot be empty'
+                }), 400
+            hostname_pattern = re.compile(
+                r'^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
+            )
+            ip_pattern = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+            if not hostname_pattern.match(val) and not ip_pattern.match(val):
+                return jsonify({
+                    'success': False,
+                    'error': 'INVALID_VPN_CONFIG',
+                    'message': 'VPN Server must be a valid hostname or IP address'
+                }), 400
+                
+        # Update config
         for key in ['VPN_SERVER', 'VPN_USERNAME', 'VPN_PASSWORD', 'VPN_AUTOSTART']:
-            if key in data:
-                config.update_config(key, data[key])
+            if key in mapped_data:
+                config.update_config(key, mapped_data[key])
+                
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error',
+            'message': str(e)
+        }), 500
+
 
 
 # === SERVICE MANAGEMENT ===
 
 ZDT_SERVICES = [
-    'zdt-web', 'zdt-scheduler', 'zdt-telegram', 'zdt-tunnel'
+    'zdt-api', 'zdt-web', 'zdt-scheduler', 'zdt-telegram'
 ]
 
 @admin_bp.route('/api/admin/services', methods=['GET'])
@@ -399,15 +538,25 @@ def list_services():
         services = []
         for name in ZDT_SERVICES:
             unit = name + '.service'
-            active = subprocess.run(['systemctl', 'is-active', unit],
-                                    capture_output=True, text=True, timeout=5)
-            enabled = subprocess.run(['systemctl', 'is-enabled', unit],
-                                     capture_output=True, text=True, timeout=5)
-            services.append({
-                'name': name,
-                'active': active.stdout.strip(),
-                'enabled': enabled.stdout.strip(),
-            })
+            try:
+                active = subprocess.run(['sudo', 'systemctl', 'is-active', unit],
+                                        capture_output=True, text=True, timeout=5)
+                enabled = subprocess.run(['sudo', 'systemctl', 'is-enabled', unit],
+                                         capture_output=True, text=True, timeout=5)
+                services.append({
+                    'name': name,
+                    'active': active.stdout.strip(),
+                    'enabled': enabled.stdout.strip(),
+                })
+            except Exception:
+                pg_name = name.replace('zdt-', '')
+                pg = subprocess.run(['pgrep', '-f', pg_name],
+                                    capture_output=True, text=True, timeout=3)
+                services.append({
+                    'name': name,
+                    'active': 'active' if pg.returncode == 0 else 'inactive',
+                    'enabled': 'unknown',
+                })
         return jsonify({'services': services})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -417,7 +566,7 @@ def list_services():
 @requires_admin
 def shutdown_server():
     try:
-        subprocess.Popen(['systemctl', 'poweroff'], start_new_session=True)
+        subprocess.Popen(['sudo', 'systemctl', 'poweroff'], start_new_session=True)
         return jsonify({'success': True, 'message': 'Server shutdown initiated'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -436,11 +585,11 @@ def manage_service(name, action):
 
         # Special handling for zdt-api restart (don't block)
         if name == 'zdt-api' and action == 'restart':
-            subprocess.Popen(['systemctl', 'restart', unit, '--no-block'],
+            subprocess.Popen(['sudo', 'systemctl', 'restart', unit, '--no-block'],
                              start_new_session=True)
             return jsonify({'success': True, 'message': f'{name} restart initiated (delayed)'})
 
-        result = subprocess.run(['systemctl', action, unit],
+        result = subprocess.run(['sudo', 'systemctl', action, unit],
                                 capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
             return jsonify({'error': result.stderr.strip() or f'Gagal {action} {name}'}), 500

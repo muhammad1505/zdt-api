@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getApiKeys, generateKey, revokeKey } from '../api/client';
+import { getApiKeys, generateKey, revokeKey, deleteKey } from '../api/client';
 import type { ApiKey, KeyGenerateResponse } from '../types';
 import { Key, Plus, Trash2, Copy, Check } from 'lucide-react';
 
@@ -44,6 +44,14 @@ export default function ApiKeysPage() {
     if (!confirm('Revoke this API Key? This cannot be undone.')) return;
     try {
       await revokeKey(keyId);
+      fetchKeys();
+    } catch {}
+  };
+
+  const handleDelete = async (keyId: string) => {
+    if (!confirm('Permanently delete this API Key? This cannot be undone.')) return;
+    try {
+      await deleteKey(keyId);
       fetchKeys();
     } catch {}
   };
@@ -199,6 +207,12 @@ export default function ApiKeysPage() {
               <button onClick={() => handleRevoke(key.key_id)}
                 style={{ padding: '8px 12px', background: '#FF003C20', color: '#FF003C', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>
                 <Trash2 size={14} />
+              </button>
+            )}
+            {!key.active && (
+              <button onClick={() => handleDelete(key.key_id)}
+                style={{ padding: '8px 12px', background: '#6B6B8020', color: '#6B6B80', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>
+                Delete
               </button>
             )}
           </div>

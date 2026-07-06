@@ -1,0 +1,15 @@
+[Unit]
+Description=ZDT Scheduler - Periodic Spotify Playlist Sync
+After=network.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+WorkingDirectory=__ZDT_API_DIR__
+ExecStart=__PYTHON__ __ZDT_API_DIR__/zdt-scheduler.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

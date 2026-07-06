@@ -25,7 +25,7 @@ def test_login_no_json(client):
     assert r.status_code in (400, 401, 403)
 
 def test_verify_key_format(client):
-    r = client.post('/api/verify-key', json={'smart_key': 'invalid-key-format'})
+    r = client.post('/api/verify-key', json={'key': 'invalid-key-format'})
     assert r.status_code in (400, 401)
 
 def test_health_response_structure(client):

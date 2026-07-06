@@ -1,0 +1,703 @@
+# ==========================================
+# ZDT Helpers Module
+# ==========================================
+# Shared utility functions: dependency checks,
+# folder selection, file cleaning, media scanning
+# ==========================================
+
+# ==========================================
+# SHARED PATH RESOLUTION (Single Source of Truth)
+# All shell modules should use these instead of hardcoding paths.
+# ==========================================
+
+# Resolve share directory (first existing wins, fallback to local)
+_get_share_dir() {
+    for _d in "$HOME/.local/share/zdt" "/usr/local/share/zdt" "/data/data/com.termux/files/usr/share/zdt"; do
+        if [ -d "$_d" ]; then
+            echo "$_d"
+            return 0
+        fi
+    done
+    echo "$HOME/.local/share/zdt"
+}
+
+# Resolve zdt binary path (first existing wins, fallback to bare name)
+_get_zdt_bin() {
+    for _f in "$HOME/.local/bin/zdt" "/usr/local/bin/zdt" "/data/data/com.termux/files/usr/bin/zdt"; do
+        if [ -f "$_f" ]; then
+            echo "$_f"
+            return 0
+        fi
+    done
+    # Also try PATH
+    local _which
+    _which=$(command -v zdt 2>/dev/null)
+    if [ -n "$_which" ]; then
+        echo "$_which"
+        return 0
+    fi
+    echo "zdt"
+}
+
+# Find a script file across all locations
+_find_script() {
+    local _name="$1"
+    local _share
+    _share=$(_get_share_dir)
+    for _f in "${SCRIPT_DIR:-.}/$_name" "$_share/$_name" "$(pwd)/$_name"; do
+        if [ -f "$_f" ]; then
+            echo "$_f"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Find a module file across all locations
+_find_module() {
+    local _name="$1"
+    local _share
+    _share=$(_get_share_dir)
+    for _f in "${_MODULES_DIR:-.}/$_name" "$_share/zdt-modules/$_name" "$(pwd)/zdt-modules/$_name"; do
+        if [ -f "$_f" ]; then
+            echo "$_f"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Shared config directory (single source of truth — respects XDG_CONFIG_HOME)
+# Match core.sh's _get_config_dir() logic
+if [ -z "${ZDT_CONFIG_DIR:-}" ]; then
+    if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+        readonly ZDT_CONFIG_DIR="$XDG_CONFIG_HOME/zdt"
+    elif [ -n "${HOME:-}" ]; then
+        readonly ZDT_CONFIG_DIR="$HOME/.config/zdt"
+    else
+        readonly ZDT_CONFIG_DIR="/tmp/.zdt-config-$(id -u 2>/dev/null || echo 0)"
+    fi
+fi
+[ -z "${ZDT_CONFIG_FILE:-}" ] && readonly ZDT_CONFIG_FILE="$ZDT_CONFIG_DIR/config.env"
+[ -z "${ZDT_DB_PATH:-}" ] && readonly ZDT_DB_PATH="$ZDT_CONFIG_DIR/zdt.db"
+[ -z "${ZDT_SCHEDULER_PATH:-}" ] && readonly ZDT_SCHEDULER_PATH="$ZDT_CONFIG_DIR/scheduler.json"
+[ -z "${ZDT_HISTORY_DB:-}" ] && readonly ZDT_HISTORY_DB="$ZDT_CONFIG_DIR/zdt_history.db"
+
+# Shared VENV paths
+[ -z "${ZDT_VENV_DIR:-}" ] && readonly ZDT_VENV_DIR="$HOME/.local/share/zdt/venv"
+[ -z "${ZDT_DEMUCS_VENV_DIR:-}" ] && readonly ZDT_DEMUCS_VENV_DIR="$HOME/.local/share/zdt/demucs_venv"
+[ -z "${ZDT_DEMUCS_BIN:-}" ] && readonly ZDT_DEMUCS_BIN="$ZDT_DEMUCS_VENV_DIR/bin/demucs"
+
+# ==========================================
+# HELPER: VALIDASI DEPENDENCY
+# ==========================================
+_check_dependency() {
+    local tool="$1"
+    local required="${2:-false}"
+
+    if command -v "$tool" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if [ "$required" = "true" ]; then
+        echo -e "  ${YELLOW}${ICO_ARROW} Alat '$tool' belum terinstal! Mengalihkan ke menu Setup...${RESET}"
+        sleep 1
+        install_missing_tools
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            echo -e "  ${RED}${ICO_FAIL} Alat '$tool' gagal diinstal secara otomatis. Batal memproses!${RESET}"
+            echo -e "  ${GRAY}Recovery: Coba jalankan 'sudo apt install $tool' atau periksa koneksi internet Anda.${RESET}"
+            return 1
+        fi
+        return 0
+    fi
+    return 1
+}
+
+# ==========================================
+# HELPER: SELECT TARGET FOLDER
+# ==========================================
+pilih_folder_target() {
+    local folder_list=()
+    local search_dir="${ROOT_DIR:-.}"
+    _safe_find_dirs folder_list "$search_dir"
+
+    local count=${#folder_list[@]}
+    local options=()
+    options+=("${RED}[0]${RESET} BATAL / KEMBALI")
+    options+=("${GREEN}[1]${RESET} Semua ($search_dir)")
+    
+    if [ "$count" -gt 0 ]; then
+        for ((i = 0; i < count; i++)); do
+            local nama_f
+            nama_f=$(basename "${folder_list[$i]}")
+            options+=("[$((i + 2))] $nama_f")
+        done
+    else
+        options+=("${GRAY}(Tidak ada sub-folder terdeteksi)${RESET}")
+    fi
+
+    local max_idx=$((count + 1))
+    
+    _print_menu_box "PILIH TARGET FOLDER" "${options[@]}"
+    
+    echo -e -n "  ${BOLD}[?] Pilihan [0-$max_idx] (Enter = 1): ${RESET}"
+    local target_idx
+    read -r target_idx
+    echo ""
+
+    if [ "$target_idx" = "0" ]; then
+        echo -e "  ${YELLOW}${ICO_ARROW} Dibatalkan! Kembali ke menu utama...${RESET}"
+        return 1
+    elif [ -z "$target_idx" ] || [ "$target_idx" = "1" ]; then
+        TARGET_DIR="$search_dir"
+        echo -e "  ${GREEN}${ICO_OK} Target disetel ke: Semua ($search_dir)${RESET}"
+        return 0
+    elif [[ "$target_idx" =~ ^[0-9]+$ ]] && [ "$target_idx" -le "$max_idx" ] && [ "$target_idx" -gt 1 ]; then
+        local subfolder
+        subfolder=$(basename "${folder_list[$((target_idx - 2))]}")
+        TARGET_DIR="$search_dir/$subfolder"
+        echo -e "  ${GREEN}${ICO_OK} Target disetel ke: $TARGET_DIR${RESET}"
+        return 0
+    else
+        echo -e "  ${RED}${ICO_FAIL} Pilihan tidak valid! Otomatis disetel ke Semua ($search_dir).${RESET}"
+        TARGET_DIR="$search_dir"
+        return 0
+    fi
+}
+
+# ==========================================
+# HELPER: PEMBERSIH NAMA FILE
+# ==========================================
+_bersih_satu_nama() {
+    local file="$1"
+
+    if [ ! -f "$file" ]; then
+        return 0
+    fi
+
+    local dir base
+    dir=$(dirname "$file")
+    base=$(basename "$file")
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        _log "WARN" "python3 tidak tersedia, skip pembersihan nama: $base"
+        return 0
+    fi
+
+    local newbase
+    newbase=$(python3 -c "
+import re, sys, os
+base = sys.argv[1]
+name, ext = os.path.splitext(base)
+
+# Only strip tags that are INSIDE parentheses () or brackets []
+name = re.sub(r'\s*\([^)]*(?:Official|Music Video|Video Klip|Video Clip|Lyric Video|Audio Only|Live Performance|MV|Cover|Acoustic|Lirik)[^)]*\)', '', name, flags=re.IGNORECASE)
+name = re.sub(r'\s*\[[^\]]*(?:Official|Music Video|Video Klip|Video Clip|Lyric Video|Audio Only|Live Performance|MV|Cover|Acoustic|Lirik)[^\]]*\]', '', name, flags=re.IGNORECASE)
+name = re.sub(r'\s*[\(\[][^\)\]]*(4K|8K|HD|HQ|1080p|720p)[^\)\]]*[\)\]]', '', name, flags=re.IGNORECASE)
+
+# Cleanup whitespace
+name = re.sub(r'  +', ' ', name).strip()
+name = re.sub(r' \.', '.', name)
+
+# Strip common Indonesian music channel suffixes at the end
+name = re.sub(r'\s*-\s*(DC MUSIK|DC PRODUCTION|DC\. PRODUCTION|Aneka Safari Records|Aneka Safari|Ageng Music|Global Musik Era Digital|Global Musik|Mabos Channel|Khatulistiwa Record|TA PRO Music|ENY SAGA|Eny Saga|Perdana Record|Sakura Record|Wahanamusik|Adita Music|Bintara|Sandi Records|RC Music|Ngapak|MUARA BINTANG|Teta Record)[^a-zA-Z0-9]*$', '', name, flags=re.IGNORECASE)
+
+name = re.sub(r'\s*-\s*$', '', name).strip()
+
+# SAFETY: never produce empty name
+if not name:
+    name = os.path.splitext(base)[0]
+
+print(name + ext)
+" "$base" 2>/dev/null || echo "$base")
+
+    # Safety: skip if result is empty or just extension
+    local newname_only="${newbase%.*}"
+    if [ -z "$newname_only" ] || [ "$newbase" = "$base" ]; then
+        return 0
+    fi
+
+    if [ "$base" != "$newbase" ] && [ -n "$newbase" ]; then
+        if [ -e "$dir/$newbase" ]; then
+            local filename extension
+            if [[ "$newbase" == *.* ]]; then
+                filename="${newbase%.*}"
+                extension="${newbase##*.}"
+            else
+                filename="$newbase"
+                extension=""
+            fi
+
+            local counter=1
+            if [ -n "$extension" ]; then
+                while [ -e "$dir/${filename} (${counter}).${extension}" ]; do
+                    ((counter++))
+                done
+                newbase="${filename} (${counter}).${extension}"
+            else
+                while [ -e "$dir/${filename} (${counter})" ]; do
+                    ((counter++))
+                done
+                newbase="${filename} (${counter})"
+            fi
+        fi
+        mv -- "$file" "$dir/$newbase" && echo -e "    ${GREEN}${ICO_OK} Dirapikan:${RESET} $newbase"
+        _log "INFO" "Renamed: $base -> $newbase"
+        
+        # AUTO-TAGGER METADATA
+        local final_file="$dir/$newbase"
+        if [[ -f "$ZDT_VENV_DIR/bin/python" ]]; then
+            "$ZDT_VENV_DIR/bin/python" -c "
+import sys, os
+try:
+    import mutagen
+    from mutagen.easyid3 import EasyID3
+    from mutagen.mp4 import MP4
+    from mutagen.flac import FLAC
+    file_path = sys.argv[1]
+    name_noext = os.path.splitext(os.path.basename(file_path))[0]
+    artist = 'Unknown Artist'
+    title = name_noext
+    if ' - ' in name_noext:
+        parts = name_noext.split(' - ', 1)
+        artist = parts[0].strip()
+        title = parts[1].strip()
+    
+    if file_path.lower().endswith('.mp3'):
+        try:
+            audio = EasyID3(file_path)
+        except mutagen.id3.ID3NoHeaderError:
+            audio = mutagen.File(file_path, easy=True)
+            audio.add_tags()
+        audio['title'] = title
+        audio['artist'] = artist
+        audio.save()
+    elif file_path.lower().endswith('.m4a'):
+        audio = MP4(file_path)
+        audio['\xa9nam'] = title
+        audio['\xa9ART'] = artist
+        audio.save()
+    elif file_path.lower().endswith('.flac'):
+        audio = FLAC(file_path)
+        audio['title'] = title
+        audio['artist'] = artist
+        audio.save()
+except Exception:
+    pass
+" "$final_file" 2>/dev/null
+        fi
+    else
+        echo -e "    ${GRAY}${ICO_CHECK_OK} Sudah rapi:${RESET} $base"
+    fi
+}
+
+bersih_nama_otomatis() {
+    local scan_dir="${1:-.}"
+    local mode="${2:-recent}"
+    echo -e "  ${CYAN}${ICO_ARROW} AUTO CLEAN NAMA FILE${RESET}"
+    local time_filter=()
+    if [ "$mode" != "all" ]; then
+        time_filter=(-mmin -60)
+    fi
+    while IFS= read -r file; do
+        _bersih_satu_nama "$file"
+    done < <(find "$scan_dir" -type f \( -iname "*.m4a" -o -iname "*.mp3" -o -iname "*.flac" -o -iname "*.wav" -o -iname "*.ogg" -o -iname "*.opus" -o -iname "*.mp4" -o -iname "*.lrc" \) "${time_filter[@]}" 2>/dev/null)
+}
+
+# ==========================================
+# HELPER: SCAN MEDIA FILES (DRY)
+# ==========================================
+# _find_media_files <target_dir> <type> [extra_find_args...]
+# type: "audio" | "video" | "all" | "lyrics"
+_find_media_files() {
+    local search_dir="$1"
+    local media_type="$2"
+    shift 2
+    local extra_args=("$@")
+
+    local find_args=("$search_dir" -type f)
+    local ext_args=()
+
+    case "$media_type" in
+        audio)
+            ext_args=("(" -iname "*.m4a" -o -iname "*.mp3" -o -iname "*.flac" -o -iname "*.wav" -o -iname "*.ogg" -o -iname "*.opus" ")")
+            ;;
+        video)
+            ext_args=("(" -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.webm" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.ts" ")")
+            ;;
+        all)
+            ext_args=("(" -iname "*.m4a" -o -iname "*.mp3" -o -iname "*.flac" -o -iname "*.wav" -o -iname "*.ogg" -o -iname "*.opus" -o -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.webm" ")")
+            ;;
+        lyrics)
+            ext_args=(-iname "*.lrc")
+            ;;
+        media_with_lyrics)
+            ext_args=("(" -iname "*.m4a" -o -iname "*.mp3" -o -iname "*.flac" -o -iname "*.wav" -o -iname "*.ogg" -o -iname "*.opus" -o -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.webm" -o -iname "*.lrc" ")")
+            ;;
+    esac
+
+    find_args+=("${ext_args[@]}" "${extra_args[@]}")
+    find "${find_args[@]}" 2>/dev/null
+}
+
+# ==========================================
+# HELPER: KOMPRES AUDIO TUNGGAL
+# ==========================================
+_kompres_audio_file() {
+    local file="$1"
+    local codec="${2:-aac}"
+    local bitrate="${3:-128k}"
+    local target_ext="${4:-m4a}"
+
+    if [ ! -f "$file" ]; then
+        return 0
+    fi
+
+    if ! command -v ffmpeg >/dev/null 2>&1; then
+        echo -e "    ${RED}${ICO_FAIL} ffmpeg tidak tersedia!${RESET}"
+        return 1
+    fi
+
+    local dir base filename_noext ext_original
+    dir=$(dirname "$file")
+    base=$(basename "$file")
+    filename_noext="${base%.*}"
+    ext_original="${base##*.}"
+
+    local temp_file="$dir/${filename_noext}_temp.${target_ext}"
+
+    if ffmpeg -y -nostdin -v quiet -threads 2 -i "$file" -c:v copy -c:a "$codec" -b:a "$bitrate" "$temp_file"; then
+        if [ "$file" != "$dir/${filename_noext}.${target_ext}" ]; then
+            rm -f "$file"
+        fi
+        mv -- "$temp_file" "$dir/${filename_noext}.${target_ext}"
+        if [ "$ext_original" != "$target_ext" ]; then
+            echo -e "    ${GREEN}${ICO_OK} SUKSES KOMPRES:${RESET} $base ${GRAY}→ .${target_ext} ($codec $bitrate)${RESET}"
+        else
+            echo -e "    ${GREEN}${ICO_OK} SUKSES KOMPRES:${RESET} $base"
+        fi
+        _log "INFO" "Compressed: $base -> ${filename_noext}.${target_ext}"
+    else
+        rm -f "$temp_file"
+        echo -e "    ${RED}${ICO_FAIL} GAGAL KOMPRES:${RESET} $base"
+        _log "ERROR" "Compression failed: $base"
+    fi
+}
+
+# ==========================================
+# HELPER: KOMPRES VIDEO TUNGGAL
+# ==========================================
+_kompres_video_file() {
+    local file="$1"
+    local codec="${2:-libx265}"
+    local v_qual="${3:--crf 28}"
+    local target_ext="${4:-mp4}"
+
+    if [ ! -f "$file" ]; then
+        return 0
+    fi
+
+    if ! command -v ffmpeg >/dev/null 2>&1; then
+        echo -e "    ${RED}${ICO_FAIL} ffmpeg tidak tersedia!${RESET}"
+        return 1
+    fi
+
+    local dir base filename_noext ext_original
+    dir=$(dirname "$file")
+    base=$(basename "$file")
+    filename_noext="${base%.*}"
+    ext_original="${base##*.}"
+
+    local temp_file="$dir/${filename_noext}_temp.${target_ext}"
+
+    echo -e -n "    ${CYAN}${ICO_ARROW} Mengompresi ke $codec... Harap sabar! "
+    local qual_arr=()
+    read -r -a qual_arr <<< "$v_qual"
+
+    ffmpeg -y -nostdin -v quiet -threads 2 -i "$file" -c:v "$codec" "${qual_arr[@]}" -preset fast -c:a aac -b:a 128k "$temp_file" &
+    local fpid=$!
+    local spin='-\|/'
+    local i=0
+    while kill -0 $fpid 2>/dev/null; do
+        i=$(( (i+1) %4 ))
+        printf "\b${spin:$i:1}"
+        sleep 0.1
+    done
+    wait $fpid
+    local f_exit=$?
+    echo -e "\b "
+
+    if [ "$f_exit" -eq 0 ] && [ -f "$temp_file" ]; then
+        if [ "$file" != "$dir/${filename_noext}.${target_ext}" ]; then
+            rm -f "$file"
+        fi
+        mv -- "$temp_file" "$dir/${filename_noext}.${target_ext}"
+        echo -e "    ${GREEN}${ICO_OK} SUKSES KOMPRES VIDEO:${RESET} $base ${GRAY}→ .${target_ext} ($codec)${RESET}"
+        _log "INFO" "Video compressed to $codec: $base"
+    else
+        rm -f "$temp_file"
+        echo -e "    ${RED}${ICO_FAIL} GAGAL KOMPRES VIDEO:${RESET} $base"
+        _log "ERROR" "Video compression failed: $base"
+    fi
+}
+
+# ==========================================
+# INTERACTIVE PLAYLIST SELECTOR
+# ==========================================
+_playlist_selector() {
+    local url="$1"
+    SELECTED_PLAYLIST_ITEMS=""
+    
+    echo -e -n "  ${CYAN}${ICO_ARROW} Mengambil daftar lagu dari playlist...${RESET} "
+    
+    local tmp_playlist="meta_temp_$$.playlist"
+    
+    # Run yt-dlp in background to show spinner
+    yt-dlp --flat-playlist --print "%(playlist_index)s|%(url)s|%(title)s" "$url" > "$tmp_playlist" 2>/dev/null &
+    local yt_pid=$!
+    _zdt_spinner $yt_pid "Mengambil daftar playlist..."
+    
+    if [ ! -s "$tmp_playlist" ]; then
+        echo -e "  ${RED}${ICO_FAIL} Gagal mengambil daftar playlist atau playlist kosong.${RESET}"
+        rm -f "$tmp_playlist"
+        return 1
+    fi
+    
+    # Read playlist items into array
+    local playlist_items=()
+    while IFS= read -r line; do
+        playlist_items+=("$line")
+    done < "$tmp_playlist"
+    rm -f "$tmp_playlist"
+    
+    local total_items=${#playlist_items[@]}
+    local page_size=10
+    local total_pages=$(( (total_items + page_size - 1) / page_size ))
+    local current_page=1
+    
+    while true; do
+        local start_idx=$(( (current_page - 1) * page_size ))
+        local end_idx=$(( start_idx + page_size - 1 ))
+        if [ "$end_idx" -ge "$total_items" ]; then
+            end_idx=$(( total_items - 1 ))
+        fi
+        
+        echo -e "\n  ${MAGENTA}■ DAFTAR LAGU PLAYLIST (Halaman $current_page dari $total_pages)${RESET}"
+        echo -e "  ${GRAY}──────────────────────────────────────────────────${RESET}"
+        
+        for i in $(seq $start_idx $end_idx); do
+            local item="${playlist_items[$i]}"
+            local idx="${item%%|*}"
+            local rest="${item#*|}"
+            local title="${rest#*|}"
+            
+            # Truncate title if too long
+            if [ ${#title} -gt 50 ]; then
+                title="${title:0:47}..."
+            fi
+            echo -e "  ${GREEN}[$idx]${RESET} $title"
+        done
+        
+        echo -e "  ${GRAY}──────────────────────────────────────────────────${RESET}"
+        echo -e "  ${YELLOW}Navigasi:${RESET} [n] Next Page | [p] Prev Page | [0] Batal"
+        echo -e -n "  ${BOLD}[?] Masukkan nomor lagu (contoh: 2 atau 1,4,7): ${RESET}"
+        
+        local user_input
+        read -r user_input
+        
+        if [ -z "$user_input" ]; then
+            continue
+        elif [ "$user_input" = "0" ]; then
+            return 1
+        elif [ "${user_input,,}" = "n" ]; then
+            if [ "$current_page" -lt "$total_pages" ]; then
+                current_page=$((current_page + 1))
+            fi
+        elif [ "${user_input,,}" = "p" ]; then
+            if [ "$current_page" -gt 1 ]; then
+                current_page=$((current_page - 1))
+            fi
+        else
+            # Validasi input regex: format "angka,angka" atau "angka"
+            if [[ "$user_input" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+                SELECTED_PLAYLIST_ITEMS="$user_input"
+                
+                SELECTED_PLAYLIST_URLS=()
+                IFS=',' read -ra sel_indices <<< "$user_input"
+                for sel_idx in "${sel_indices[@]}"; do
+                    # Strip leading zeros safely
+                    sel_idx=$((10#$sel_idx))
+                    for item in "${playlist_items[@]}"; do
+                        local idx="${item%%|*}"
+                        local num_idx=$((10#$idx))
+                        if [ "$num_idx" -eq "$sel_idx" ]; then
+                            local rest="${item#*|}"
+                            local item_url="${rest%%|*}"
+                            # Ensure full URL (yt-dlp may return just video ID with some flags)
+                            if [[ "$item_url" != http* ]]; then
+                                item_url="https://www.youtube.com/watch?v=$item_url"
+                            fi
+                            SELECTED_PLAYLIST_URLS+=("$item_url")
+                            break
+                        fi
+                    done
+                done
+                
+                return 0
+            else
+                echo -e "  ${RED}${ICO_FAIL} Input tidak valid! Masukkan angka atau pisahkan dengan koma.${RESET}"
+                sleep 1
+            fi
+        fi
+    done
+}
+
+# ==========================================
+# HELPER: RECORD DOWNLOADS TO DB
+# ==========================================
+_record_downloads() {
+    local scan_dir="$1"
+    local source="$2"
+    local url="$3"
+    
+    local find_args=( -iname "*.mp3" -o -iname "*.m4a" -o -iname "*.flac" -o -iname "*.wav" -o -iname "*.ogg" -o -iname "*.opus" -o -iname "*.mp4" -o -iname "*.mkv" )
+    
+    while IFS= read -r f; do
+        if [ -n "$f" ] && [ -f "$f" ] && [ -s "$f" ]; then
+            local fname size db_path
+            fname=$(basename "$f")
+            size=$(stat -c%s "$f" 2>/dev/null || echo 0)
+            db_path="$ZDT_DB_PATH"
+            python3 "$_MODULES_DIR/zdt_db.py" "$db_path" add_download "$fname" "$url" "$source" "$size" 2>/dev/null || true
+        fi
+    done < <(find "$scan_dir" -maxdepth 1 -type f \( "${find_args[@]}" \) -mmin -2 2>/dev/null)
+}
+
+# ==========================================
+# SHARED DOWNLOAD WIZARD: FOLDER MODE SELECTION
+# ==========================================
+# Menampilkan dialog folder management (Auto-Folder, Manual, Tanpa Folder)
+# Global output: ZDT_FOLDER_MODE, ZDT_FOLDER_MANUAL_NAME
+# Return: 0 (success), 1 (cancel)
+_ask_folder_mode() {
+    _print_menu_box "MANAJEMEN FOLDER OUTPUT" \
+        "${GREEN}[1]${RESET} Auto-Folder per Artis/Channel Utama" \
+        "${GREEN}[2]${RESET} Bikin 1 Folder Manual" \
+        "${GREEN}[3]${RESET} Tanpa folder baru" \
+        "DIVIDER" \
+        "${RED}[0]${RESET} KEMBALI"
+    echo -e -n "  ${BOLD}[?] Pilih Mode [0-3]: ${RESET}"
+    read -r -n 1 ZDT_FOLDER_MODE
+    echo ""
+    if [ "$ZDT_FOLDER_MODE" = "0" ]; then return 1; fi
+
+    ZDT_FOLDER_MANUAL_NAME=""
+    if [ "$ZDT_FOLDER_MODE" = "2" ]; then
+        echo -e -n "  ${BOLD}[?] Nama folder (0=Kembali): ${RESET}"
+        local nama_input
+        read -r nama_input
+        if [ "$nama_input" = "0" ]; then return 1; fi
+        if [ -z "$nama_input" ]; then
+            echo -e "  ${YELLOW}${ICO_WARN} Nama folder kosong! Otomatis download ke direktori saat ini.${RESET}"
+        else
+            ZDT_FOLDER_MANUAL_NAME="${nama_input// /-}"
+        fi
+    fi
+    return 0
+}
+
+# ==========================================
+# SHARED DOWNLOAD WIZARD: AUDIO FORMAT SELECTION
+# ==========================================
+# Menampilkan dialog pemilihan format audio (M4A, MP3, FLAC, WAV, OPUS, OGG)
+# Global output: ZDT_FORMAT_PILIH (1-6)
+# Return: 0 (success), 1 (cancel/back)
+_ask_format_audio() {
+    _print_menu_box "FORMAT OUTPUT" \
+        "${GREEN}[1]${RESET} M4A  (Default, paling kompatibel, kualitas bagus)" \
+        "${GREEN}[2]${RESET} MP3  (Universal, didukung semua perangkat lama)" \
+        "${GREEN}[3]${RESET} FLAC (Lossless, kualitas tertinggi, ukuran besar)" \
+        "${GREEN}[4]${RESET} WAV  (Uncompressed, untuk studio/editing)" \
+        "${GREEN}[5]${RESET} OPUS (Modern, ukuran kecil, suara jernih)" \
+        "${GREEN}[6]${RESET} OGG  (Open source, bagus untuk streaming/game)" \
+        "DIVIDER" \
+        "${RED}[0]${RESET} KEMBALI"
+    echo -e -n "  ${BOLD}[?] Pilihan [0-6]: ${RESET}"
+    read -r -n 1 ZDT_FORMAT_PILIH
+    echo ""
+    if [ -z "$ZDT_FORMAT_PILIH" ] || [ "$ZDT_FORMAT_PILIH" = "0" ]; then
+        ZDT_FORMAT_PILIH=""
+        return 1
+    fi
+    return 0
+}
+
+# ==========================================
+# SHARED POST-DOWNLOAD: AUDIO COMPRESS + CLEAN
+# ==========================================
+# Post-download processing: compress (if enabled) then clean file names
+# Arguments: scan_dir, extension, pilih_kompres(y/n)
+_post_download_audio() {
+    local scan_dir="$1"
+    local ext="$2"
+    local pilih_kompres="$3"
+
+    if [[ "$pilih_kompres" =~ ^[Yy]$ ]]; then
+        echo -e "  ${CYAN}${ICO_ARROW} AUTO COMPRESS AUDIO${RESET}"
+        local c_codec="aac"
+        local c_ext="m4a"
+        if [ "$ext" = "mp3" ]; then
+            c_codec="libmp3lame"
+            c_ext="mp3"
+        fi
+        while IFS= read -r file; do
+            _kompres_audio_file "$file" "$c_codec" "128k" "$c_ext"
+        done < <(find "$scan_dir" -type f -iname "*.$ext" ! -name "*_temp.*" -mmin -60 2>/dev/null)
+    fi
+
+    echo -e "  ${CYAN}${ICO_ARROW} AUTO CLEAN NAMA FILE${RESET}"
+    while IFS= read -r file; do
+        _bersih_satu_nama "$file"
+    done < <(find "$scan_dir" -type f \( -iname "*.$ext" -o -iname "*.m4a" -o -iname "*.lrc" \) -mmin -60 2>/dev/null)
+}
+
+# ==========================================
+# SHARED: RESOLVE SCAN DIR
+# ==========================================
+# Arguments: folder_mode, auto_folder_name, folder_manual_name
+# Echoes scan directory path
+_resolve_scan_dir() {
+    local folder_mode="$1"
+    local auto_name="$2"
+    local manual_name="$3"
+    if [ "$folder_mode" = "1" ] && [ -n "$auto_name" ]; then
+        echo "./$auto_name"
+    elif [ "$folder_mode" = "2" ] && [ -n "$manual_name" ]; then
+        echo "./$manual_name"
+    else
+        echo "."
+    fi
+}
+
+# ==========================================
+# HELPER: DOWNLOAD WITH AUTO-RETRY
+# ==========================================
+_download_with_retry() {
+    local max_retries=3
+    local retry_count=0
+    local dl_status=1
+    
+    while [ $retry_count -lt $max_retries ] && [ $dl_status -ne 0 ]; do
+        dl_status=0
+        "$@" || dl_status=$?
+
+        if [ $dl_status -ne 0 ]; then
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                echo -e "  ${YELLOW}${ICO_WARN} Unduhan gagal (Exit: $dl_status). Mencoba ulang ($retry_count/$max_retries) dalam 3 detik...${RESET}"
+                sleep 3
+            fi
+        fi
+    done
+    return $dl_status
+}

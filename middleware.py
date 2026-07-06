@@ -16,10 +16,25 @@ _sse_lock = threading.Lock()
 
 
 def check_rate_limit():
-    """Rate limiting middleware. Apply as before_request."""
+    """Rate limiting middleware. Apply as before_request.
+    
+    WARNING (Multi-worker Gunicorn limitation):
+    This implementation uses an in-memory defaultdict (RATE_LIMIT_STORE). In multi-worker
+    production environments (e.g., Gunicorn with multiple sync/gevent workers), each worker process
+    maintains its own isolated copy of RATE_LIMIT_STORE. Consequently, the effective rate limit
+    becomes (RATE_LIMIT_MAX * number_of_workers).
+    
+    For a strict rate limit enforcement across all workers, a centralized shared cache such as
+    Redis or Memcached should be used in combination with flask-limiter.
+    """
+    from flask import current_app
+    if current_app.config.get('TESTING'):
+        return None
+        
     # Skip rate limiting for SSE endpoint
     if request.path == '/api/logs/stream':
         return None
+
     
     ip = request.remote_addr or 'unknown'
     now = time.time()
@@ -67,8 +82,12 @@ def log_request(response):
             ip_address=request.remote_addr,
             status_code=response.status_code
         )
-    except Exception:
-        pass
+    except Exception as e:
+        from flask import current_app
+        try:
+            current_app.logger.warning(f"Failed to log activity: {e}")
+        except Exception:
+            pass
     return response
 
 

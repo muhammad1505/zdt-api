@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { getActivityLogs } from '../api/client';
 import { ScrollText, RefreshCw } from 'lucide-react';
 

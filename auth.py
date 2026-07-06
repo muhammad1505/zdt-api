@@ -5,8 +5,14 @@ from functools import wraps
 from flask import request, jsonify, g
 import jwt
 
-# JWT Secret (regenerate on every startup for simplicity)
-JWT_SECRET = secrets.token_hex(32)
+from config import config
+
+# JWT Secret (retrieve from config, or generate and persist if missing)
+JWT_SECRET = config.get('JWT_SECRET')
+if not JWT_SECRET:
+    JWT_SECRET = secrets.token_hex(32)
+    config.update_config('JWT_SECRET', JWT_SECRET)
+
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRY_HOURS = 24
 
@@ -62,10 +68,14 @@ def requires_auth(f):
                         g.api_key = key_data
                         return f(*args, **kwargs)
         
-        # Check Bearer token (admin dashboard)
+        # Check Bearer token (admin dashboard) — header or query param
+        token = None
         auth_header = request.headers.get('Authorization', '')
         if auth_header.startswith('Bearer '):
             token = auth_header[7:]
+        if not token:
+            token = request.args.get('token', '')
+        if token:
             payload = verify_bearer_token(token)
             if payload:
                 g.auth_type = 'admin'
@@ -83,7 +93,7 @@ def requires_auth(f):
                 g.user = {'username': web_user, 'role': 'admin'}
                 return f(*args, **kwargs)
         
-        return jsonify({'error': 'Unauthorized', 'message': 'Invalid or missing API key / token'}), 401
+        return jsonify({'success': False, 'error': 'Unauthorized', 'message': 'Invalid or missing API key / token'}), 401
     
     return decorated
 
@@ -120,9 +130,13 @@ def requires_admin(f):
     """Decorator: require admin-level access (Bearer token or Basic Auth)."""
     @wraps(f)
     def decorated(*args, **kwargs):
+        token = None
         auth_header = request.headers.get('Authorization', '')
         if auth_header.startswith('Bearer '):
             token = auth_header[7:]
+        if not token:
+            token = request.args.get('token', '')
+        if token:
             payload = verify_bearer_token(token)
             if payload and payload.get('role') in ('admin',):
                 g.auth_type = 'admin'
@@ -140,6 +154,6 @@ def requires_admin(f):
                 g.user = {'username': web_user, 'role': 'admin'}
                 return f(*args, **kwargs)
         
-        return jsonify({'error': 'Forbidden', 'message': 'Admin access required'}), 403
+        return jsonify({'success': False, 'error': 'Forbidden', 'message': 'Admin access required'}), 403
     
     return decorated

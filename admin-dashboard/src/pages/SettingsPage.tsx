@@ -1,28 +1,30 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import {
-  getFiles, getStreamUrl, getDownloadUrl, uploadFile, updateStoragePath,
-  getVpnStatus, vpnConnect, vpnDisconnect, getVpnConfig, setVpnConfig,
+  updateStoragePath, getVpnStatus, vpnConnect, vpnDisconnect, getVpnConfig, setVpnConfig,
   getServices, manageService, restartApi, shutdownServer, getSystemStatus,
   getConfig, updateConfig,
+  getTelegramConfig, setTelegramConfig, testTelegram,
+  getAiKeys, setAiKeys,
 } from '../api/client';
 import {
-  Folder, Search, File, Download, Play, Upload, RefreshCw,
   Wifi, WifiOff, Settings, Save,
   Server, Square, RotateCw, ToggleLeft, ToggleRight, Activity, Power,
+  MessageCircle, Send, Key, Folder, RefreshCw, Play,
 } from 'lucide-react';
+import FileBrowser from '../components/FileBrowser';
 
 // ─── Types ───────────────────────────────────────────
 
-interface MediaFile { name: string; path: string; size: number; type: string; modified: number; }
 interface VpnSt { connected: boolean; ip: string; interface: string; service_active: boolean; service_enabled: boolean; }
 interface Svc { name: string; active: string; enabled: string; }
 
 const TABS = [
-  { key: 'files', label: 'Files', icon: Folder },
   { key: 'services', label: 'Services', icon: Server },
   { key: 'vpn', label: 'VPN', icon: Wifi },
+  { key: 'telegram', label: 'Telegram', icon: MessageCircle },
+  { key: 'ai', label: 'AI Keys', icon: Key },
   { key: 'config', label: 'Config', icon: Settings },
 ];
 
@@ -30,12 +32,6 @@ const SERVICE_LABELS: Record<string, string> = {
   'zdt-api': 'API Server', 'zdt-web': 'Web UI', 'zdt-telegram': 'Telegram Bot',
   'zdt-scheduler': 'Scheduler', 'zdt-watch': 'File Watcher', 'zdt-tunnel': 'Tunnel',
 };
-
-function fmtSize(b: number): string {
-  if (b < 1024) return b + ' B';
-  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
-  return (b / 1048576).toFixed(1) + ' MB';
-}
 
 // ─── Component ───────────────────────────────────────
 
@@ -76,141 +72,11 @@ export default function SettingsPage() {
         })}
       </div>
 
-      {tab === 'files' && <FilesTab input={input} toast={toast} />}
       {tab === 'services' && <ServicesTab toast={toast} />}
       {tab === 'vpn' && <VpnTab input={input} toast={toast} />}
+      {tab === 'telegram' && <TelegramTab toast={toast} />}
+      {tab === 'ai' && <AiKeysTab toast={toast} />}
       {tab === 'config' && <ConfigTab toast={toast} />}
-    </div>
-  );
-}
-
-// ═══════════════════ FILES TAB ═══════════════════════
-
-function FilesTab({ input, toast }: { input: any; toast: any }) {
-  const [files, setFiles] = useState<MediaFile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [targetDir, setTargetDir] = useState('');
-  const [editingDir, setEditingDir] = useState(false);
-  const [dirInput, setDirInput] = useState('');
-  const [dirSaving, setDirSaving] = useState(false);
-  const ref = useRef<HTMLInputElement>(null);
-
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const d = await getFiles();
-      setFiles(d.files || []);
-      if (d.target_dir) setTargetDir(d.target_dir);
-    } catch {}
-    setLoading(false);
-  };
-  useEffect(() => { fetch(); }, []);
-
-  const handleSaveDir = async () => {
-    if (!dirInput.trim()) return;
-    setDirSaving(true);
-    try {
-      await updateStoragePath(dirInput.trim());
-      setTargetDir(dirInput.trim());
-      setEditingDir(false);
-      toast('success', 'Storage path updated');
-    } catch { toast('error', 'Gagal update path'); }
-    setDirSaving(false);
-  };
-
-  const filtered = search ? files.filter(f => f.name.toLowerCase().includes(search.toLowerCase())) : files;
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      await uploadFile(file);
-      toast('success', 'File uploaded');
-      fetch();
-    } catch { toast('error', 'Upload failed'); }
-    setUploading(false);
-    if (ref.current) ref.current.value = '';
-  };
-
-  const card = { background: '#13131A', borderRadius: 12, padding: 16, marginBottom: 8, border: '1px solid #2A2A3C', display: 'flex', justifyContent: 'space-between' as const, alignItems: 'center' as const };
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center' }}>
-        <Search size={16} color="#6B6B80" />
-        <input placeholder="Search files..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...input, flex: 1, maxWidth: 400, marginBottom: 0 }} />
-        <span style={{ color: '#6B6B80', fontSize: 13 }}>{files.length} files</span>
-        <button onClick={() => ref.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#00F0FF', color: '#09090E', border: 'none', borderRadius: 8, fontWeight: 'bold', fontSize: 13, cursor: 'pointer' }}>
-          <Upload size={16} /> Upload
-        </button>
-        <input ref={ref} type="file" hidden onChange={handleUpload} />
-        <button onClick={fetch} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#1F1F2C', color: '#6B6B80', border: '1px solid #2A2A3C', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
-          <RefreshCw size={14} /> Refresh
-        </button>
-      </div>
-
-      {/* Storage Path Config */}
-      <div style={{ background: '#13131A', borderRadius: 12, padding: '12px 16px', border: '1px solid #2A2A3C', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Folder size={16} color="#FCE205" />
-        {editingDir ? (
-          <>
-            <input value={dirInput} onChange={e => setDirInput(e.target.value)} style={{ ...input, flex: 1, marginBottom: 0 }} />
-            <button onClick={handleSaveDir} disabled={dirSaving} style={{ padding: '6px 14px', background: '#00F0FF', color: '#09090E', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>{dirSaving ? '...' : 'Save'}</button>
-            <button onClick={() => setEditingDir(false)} style={{ padding: '6px 14px', background: '#1F1F2C', color: '#6B6B80', border: '1px solid #2A2A3C', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>Cancel</button>
-          </>
-        ) : (
-          <>
-            <span style={{ flex: 1, color: '#E0E0FF', fontSize: 13, fontFamily: 'monospace' }}>{targetDir || 'Not set'}</span>
-            <button onClick={() => { setDirInput(targetDir); setEditingDir(true); }} style={{ padding: '4px 12px', background: '#1F1F2C', color: '#6B6B80', border: '1px solid #2A2A3C', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>Edit</button>
-          </>
-        )}
-      </div>
-
-      {uploading && <div style={{ ...card, borderColor: '#FCE205', color: '#FCE205', fontSize: 13, marginBottom: 12 }}>Uploading...</div>}
-
-      {loading ? <div style={{ textAlign: 'center', padding: 40, color: '#6B6B80' }}>Loading...</div>
-      : filtered.length === 0 ? <div style={{ textAlign: 'center', padding: 40, color: '#6B6B80' }}>{search ? 'No matches' : 'No files'}</div>
-      : filtered.map(f => (
-        <div key={f.path} style={card}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
-            <div style={{ padding: 8, borderRadius: 8, background: '#1F1F2C' }}><File color="#00F0FF" size={18} /></div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ color: '#E0E0FF', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
-              <div style={{ color: '#6B6B80', fontSize: 11, marginTop: 2 }}>{f.type.toUpperCase()} · {fmtSize(f.size)} · {new Date(f.modified * 1000).toLocaleDateString()}</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            {['mp4', 'mkv', 'webm', 'mp3', 'm4a', 'flac', 'wav', 'ogg', 'opus'].includes(f.type) && (
-              <button onClick={() => setPreviewUrl(getStreamUrl(f.path))}
-                style={{ padding: '6px 10px', background: '#00F0FF20', color: '#00F0FF', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
-                <Play size={14} />
-              </button>
-            )}
-            <a href={getDownloadUrl(f.path)} download
-              style={{ padding: '6px 10px', background: '#00FF8820', color: '#00FF88', border: 'none', borderRadius: 6, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex' }}>
-              <Download size={14} />
-            </a>
-          </div>
-        </div>
-      ))}
-
-      {previewUrl && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-          onClick={() => setPreviewUrl(null)}>
-          <div onClick={e => e.stopPropagation()}>
-            {previewUrl.match(/\.(mp4|mkv|webm)/i) ? (
-              <video src={previewUrl} controls autoPlay style={{ maxWidth: '100%', maxHeight: '80vh', borderRadius: 12 }} />
-            ) : (
-              <audio src={previewUrl} controls autoPlay style={{ width: 400 }} />
-            )}
-            <button onClick={() => setPreviewUrl(null)} style={{ display: 'block', margin: '16px auto 0', padding: '8px 20px', background: '#1F1F2C', color: '#E0E0FF', border: '1px solid #2A2A3C', borderRadius: 8, cursor: 'pointer' }}>Close</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -420,14 +286,192 @@ function VpnTab({ input, toast }: { input: any; toast: any }) {
   );
 }
 
+// ══════════════════ TELEGRAM TAB ═════════════════════
+
+function TelegramTab({ toast }: { toast: any }) {
+  const [botToken, setBotToken] = useState('');
+  const [chatId, setChatId] = useState('');
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  const fetch = async () => {
+    setLoading(true);
+    try {
+      const d = await getTelegramConfig();
+      setBotToken('');
+      setChatId('');
+      setEnabled(d.enabled || false);
+    } catch {}
+    setLoading(false);
+  };
+  useEffect(() => { fetch(); }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const data: Record<string, string | boolean> = { enabled };
+      if (botToken) data.bot_token = botToken;
+      if (chatId) data.chat_id = chatId;
+      await setTelegramConfig(data);
+      toast('success', 'Telegram config saved');
+      setBotToken('');
+      setChatId('');
+    } catch (e: any) { toast('error', e.response?.data?.message || 'Gagal simpan'); }
+    setSaving(false);
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    try {
+      const r = await testTelegram();
+      toast('success', r.message || 'Test message sent!');
+    } catch (e: any) { toast('error', e.response?.data?.message || 'Gagal kirim test'); }
+    setTesting(false);
+  };
+
+  const box = { background: '#13131A', borderRadius: 12, padding: 24, border: '1px solid #2A2A3C', marginBottom: 20 };
+  const input = { width: '100%', padding: '10px 14px', borderRadius: 8, background: '#09090E', border: '1px solid #2A2A3C', color: '#E0E0FF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' };
+  const btn = (c: string) => ({ display: 'flex', alignItems: 'center' as const, gap: 8, padding: '8px 18px', borderRadius: 8, fontWeight: 'bold' as const, fontSize: 13, cursor: 'pointer', background: c, color: c === '#1F1F2C' ? '#E0E0FF' : '#09090E', border: c === '#1F1F2C' ? '1px solid #2A2A3C' : 'none' });
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#6B6B80' }}>Loading...</div>;
+
+  return (
+    <div>
+      <div style={box}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+          <MessageCircle color="#0088CC" size={20} />
+          <h3 style={{ color: '#E0E0FF', fontSize: 15, margin: 0 }}>Telegram Bot</h3>
+          <span style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 4, fontSize: 12, background: enabled ? '#00FF8820' : '#6B6B8020', color: enabled ? '#00FF88' : '#6B6B80' }}>{enabled ? 'Enabled' : 'Disabled'}</span>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>BOT TOKEN</label>
+          <input value={botToken} onChange={e => setBotToken(e.target.value)} style={input} placeholder="Kosongkan jika tidak diganti" type="password" />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>CHAT ID</label>
+          <input value={chatId} onChange={e => setChatId(e.target.value)} style={input} placeholder="Kosongkan jika tidak diganti" />
+        </div>
+
+        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <label style={{ color: '#6B6B80', fontSize: 12 }}>ENABLED</label>
+          <button onClick={() => setEnabled(!enabled)}
+            style={{ padding: '6px 16px', borderRadius: 6, fontSize: 12, cursor: 'pointer', border: 'none', background: enabled ? '#00FF88' : '#6B6B80', color: '#09090E' }}>
+            {enabled ? 'ON' : 'OFF'}
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button onClick={handleSave} disabled={saving} style={{ ...btn('#00F0FF') }}><Save size={16} /> {saving ? 'Saving...' : 'Save'}</button>
+          <button onClick={handleTest} disabled={testing} style={{ ...btn('#1F1F2C') }}><Send size={16} /> {testing ? 'Sending...' : 'Test'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════ AI KEYS TAB ═════════════════════
+
+function AiKeysTab({ toast }: { toast: any }) {
+  const [keys, setKeys] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const AI_KEY_LABELS: Record<string, string> = {
+    gemini: 'Google Gemini',
+    openrouter: 'OpenRouter',
+    openai: 'OpenAI',
+  };
+
+  const AI_KEY_HELP: Record<string, string> = {
+    gemini: 'https://aistudio.google.com/app/apikey',
+    openrouter: 'https://openrouter.ai/keys',
+    openai: 'https://platform.openai.com/api-keys',
+  };
+
+  const fetch = async () => {
+    setLoading(true);
+    try {
+      const d = await getAiKeys();
+      setKeys(d.keys || {});
+    } catch {}
+    setLoading(false);
+  };
+  useEffect(() => { fetch(); }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const data: Record<string, string> = {};
+      for (const k of Object.keys(keys)) {
+        if (keys[k]) data[k] = keys[k];
+      }
+      await setAiKeys(data);
+      toast('success', 'AI keys saved');
+      fetch();
+    } catch (e: any) { toast('error', 'Gagal simpan'); }
+    setSaving(false);
+  };
+
+  const box = { background: '#13131A', borderRadius: 12, padding: 24, border: '1px solid #2A2A3C', marginBottom: 20 };
+  const input = { width: '100%', padding: '10px 14px', borderRadius: 8, background: '#09090E', border: '1px solid #2A2A3C', color: '#E0E0FF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' };
+  const btn = (c: string) => ({ display: 'flex', alignItems: 'center' as const, gap: 8, padding: '8px 18px', borderRadius: 8, fontWeight: 'bold' as const, fontSize: 13, cursor: 'pointer', background: c, color: c === '#1F1F2C' ? '#E0E0FF' : '#09090E', border: c === '#1F1F2C' ? '1px solid #2A2A3C' : 'none' });
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#6B6B80' }}>Loading...</div>;
+
+  return (
+    <div>
+      <div style={box}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+          <Key color="#00F0FF" size={20} />
+          <h3 style={{ color: '#E0E0FF', fontSize: 15, margin: 0 }}>AI API Keys</h3>
+        </div>
+
+        {Object.keys(AI_KEY_LABELS).map(name => (
+          <div key={name} style={{ marginBottom: 16 }}>
+            <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>
+              {AI_KEY_LABELS[name]}
+              <a href={AI_KEY_HELP[name]} target="_blank" rel="noopener noreferrer"
+                style={{ marginLeft: 8, color: '#00F0FF', fontSize: 11, textDecoration: 'none' }}>
+                (get key)
+              </a>
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="password"
+                value={keys[name] || ''}
+                onChange={e => setKeys(prev => ({ ...prev, [name]: e.target.value }))}
+                style={{ ...input, flex: 1, marginBottom: 0 }}
+                placeholder="********"
+              />
+            </div>
+          </div>
+        ))}
+
+        <button onClick={handleSave} disabled={saving} style={{ ...btn('#00F0FF') }}><Save size={16} /> {saving ? 'Saving...' : 'Save All'}</button>
+      </div>
+    </div>
+  );
+}
+
 // ══════════════════ CONFIG TAB ═══════════════════════
 
 function ConfigTab({ toast }: { toast: any }) {
   const [cfg, setCfg] = useState<Record<string, string>>({});
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editVal, setEditVal] = useState('');
+  const [showDirPicker, setShowDirPicker] = useState(false);
+  const [targetDir, setTargetDir] = useState('');
 
-  useEffect(() => { getConfig().then(d => setCfg(d.config)).catch(() => {}); }, []);
+  useEffect(() => {
+    getConfig().then(d => {
+      setCfg(d.config);
+      if (d.config?.TARGET_DIR) setTargetDir(d.config.TARGET_DIR);
+    }).catch(() => {});
+  }, []);
 
   const handleSave = async (key: string) => {
     try {
@@ -438,30 +482,72 @@ function ConfigTab({ toast }: { toast: any }) {
     } catch { toast('error', 'Gagal update'); }
   };
 
+  const handleDirSelected = (_files: string[], folder: string) => {
+    setShowDirPicker(false);
+    if (folder) {
+      updateStoragePath(folder);
+      setTargetDir(folder);
+      setCfg(prev => ({ ...prev, TARGET_DIR: folder }));
+      toast('success', 'Target directory updated');
+    }
+  };
+
+  const box = { background: '#13131A', borderRadius: 12, border: '1px solid #2A2A3C', padding: 20, marginBottom: 20 };
+
   return (
-    <div style={{ background: '#13131A', borderRadius: 12, border: '1px solid #2A2A3C', overflow: 'hidden' }}>
-      {Object.keys(cfg).length === 0 ? (
-        <div style={{ padding: 40, textAlign: 'center' }}>
-          <Settings size={40} color="#2A2A3C" />
-          <p style={{ color: '#6B6B80', marginTop: 12 }}>Belum ada konfigurasi.</p>
+    <div>
+      {/* Target Directory */}
+      <div style={box}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <Folder size={20} color="#FCE205" />
+          <h3 style={{ color: '#E0E0FF', fontSize: 15, margin: 0 }}>Target Directory</h3>
         </div>
-      ) : Object.entries(cfg).map(([key, value]) => (
-        <div key={key} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #1F1F2C', gap: 12 }}>
-          <code style={{ color: '#00F0FF', fontSize: 13, minWidth: 200, fontFamily: 'monospace' }}>{key}</code>
-          {editKey === key ? (
-            <>
-              <input value={editVal} onChange={e => setEditVal(e.target.value)} style={{ flex: 1, padding: '6px 10px', borderRadius: 4, background: '#09090E', border: '1px solid #00F0FF', color: '#E0E0FF', fontSize: 13, outline: 'none' }} />
-              <button onClick={() => handleSave(key)} style={{ padding: '6px 12px', background: '#00F0FF', color: '#09090E', border: 'none', borderRadius: 4, cursor: 'pointer' }}><Save size={14} /></button>
-              <button onClick={() => setEditKey(null)} style={{ padding: '6px 12px', background: '#1F1F2C', color: '#6B6B80', border: '1px solid #2A2A3C', borderRadius: 4, cursor: 'pointer' }}>Cancel</button>
-            </>
-          ) : (
-            <>
-              <span style={{ flex: 1, color: '#E0E0FF', fontSize: 13, fontFamily: 'monospace' }}>{value}</span>
-              <button onClick={() => { setEditKey(key); setEditVal(value); }} style={{ padding: '4px 10px', background: '#1F1F2C', color: '#6B6B80', border: '1px solid #2A2A3C', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Edit</button>
-            </>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <code style={{ flex: 1, color: '#E0E0FF', fontSize: 13, fontFamily: 'monospace', padding: '10px 14px', borderRadius: 8, background: '#09090E', border: '1px solid #2A2A3C' }}>
+            {targetDir || 'Not set'}
+          </code>
+          <button onClick={() => setShowDirPicker(true)}
+            style={{ padding: '8px 18px', borderRadius: 8, background: '#00F0FF', color: '#09090E', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: 13 }}>
+            Browse
+          </button>
         </div>
-      ))}
+      </div>
+
+      {showDirPicker && (
+        <FileBrowser
+          title="Pilih Target Directory"
+          onSelect={handleDirSelected}
+          onCancel={() => setShowDirPicker(false)}
+          folderPicker
+        />
+      )}
+
+      {/* Config List */}
+      <div style={box}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <Settings color="#00F0FF" size={20} />
+          <h3 style={{ color: '#E0E0FF', fontSize: 15, margin: 0 }}>All Config</h3>
+        </div>
+        {Object.keys(cfg).length === 0 ? (
+          <div style={{ padding: 20, textAlign: 'center', color: '#6B6B80' }}>Belum ada konfigurasi.</div>
+        ) : Object.entries(cfg).map(([key, value]) => (
+          <div key={key} style={{ display: 'flex', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #1F1F2C', gap: 12 }}>
+            <code style={{ color: '#00F0FF', fontSize: 13, minWidth: 200, fontFamily: 'monospace' }}>{key}</code>
+            {editKey === key ? (
+              <>
+                <input value={editVal} onChange={e => setEditVal(e.target.value)} style={{ flex: 1, padding: '6px 10px', borderRadius: 4, background: '#09090E', border: '1px solid #00F0FF', color: '#E0E0FF', fontSize: 13, outline: 'none' }} />
+                <button onClick={() => handleSave(key)} style={{ padding: '6px 12px', background: '#00F0FF', color: '#09090E', border: 'none', borderRadius: 4, cursor: 'pointer' }}><Save size={14} /></button>
+                <button onClick={() => setEditKey(null)} style={{ padding: '6px 12px', background: '#1F1F2C', color: '#6B6B80', border: '1px solid #2A2A3C', borderRadius: 4, cursor: 'pointer' }}>Cancel</button>
+              </>
+            ) : (
+              <>
+                <span style={{ flex: 1, color: '#E0E0FF', fontSize: 13, fontFamily: 'monospace' }}>{value}</span>
+                <button onClick={() => { setEditKey(key); setEditVal(value); }} style={{ padding: '4px 10px', background: '#1F1F2C', color: '#6B6B80', border: '1px solid #2A2A3C', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Edit</button>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

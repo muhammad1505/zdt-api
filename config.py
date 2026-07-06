@@ -13,6 +13,7 @@ class ZdtConfig:
         self.modules_dir = os.path.join(self.project_root, 'zdt-modules')
         self._config = {}
         self._load_config()
+        self._ensure_vpn_defaults()
         self._setup_modules_path()
     
     def _find_project_root(self):
@@ -30,8 +31,13 @@ class ZdtConfig:
         """Load key=value pairs from config.env."""
         global CONFIG_FILE
         CONFIG_FILE = self.config_path
+        self._config = {}
         if not os.path.exists(self.config_path):
             return
+        try:
+            os.chmod(self.config_path, 0o600)
+        except Exception:
+            pass
         with open(self.config_path) as f:
             for line in f:
                 line = line.strip()
@@ -46,6 +52,31 @@ class ZdtConfig:
         if os.path.exists(self.modules_dir) and self.modules_dir not in sys.path:
             sys.path.insert(0, self.modules_dir)
     
+    def _ensure_vpn_defaults(self):
+        """Populate VPN defaults in config.env if missing."""
+        defaults = {
+            'VPN_SERVER': 'remote4.vpnmurahjogja.my.id',
+            'VPN_USERNAME': 'gemini',
+            'VPN_AUTOSTART': 'false',
+        }
+        changed = False
+        for key, val in defaults.items():
+            if key not in self._config:
+                self._config[key] = val
+                changed = True
+        if changed:
+            lines = []
+            if os.path.exists(self.config_path):
+                with open(self.config_path) as f:
+                    lines = f.readlines()
+            for key, val in defaults.items():
+                if any(l.startswith(f'{key}=') for l in lines):
+                    continue
+                lines.append(f'{key}={val}\n')
+            with open(self.config_path, 'w') as f:
+                f.writelines(lines)
+            os.chmod(self.config_path, 0o600)
+
     def get(self, key, default=None):
         return self._config.get(key, default)
     

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:2000';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -55,6 +55,11 @@ export const revokeKey = async (keyId: string) => {
   return res.data;
 };
 
+export const deleteKey = async (keyId: string) => {
+  const res = await api.delete(`/api/admin/keys/${keyId}?hard=true`);
+  return res.data;
+};
+
 export const getUsers = async () => {
   const res = await api.get('/api/admin/users');
   return res.data;
@@ -86,8 +91,11 @@ export const updateUser = async (userId: number, data: Record<string, any>) => {
   return res.data;
 };
 
-export const executeTool = async (action: string) => {
-  const res = await api.post('/api/tools', { action });
+export const executeTool = async (action: string, filename?: string, path?: string) => {
+  const payload: Record<string, any> = { action };
+  if (filename) payload.filename = filename;
+  if (path) payload.path = path;
+  const res = await api.post('/api/tools', payload);
   return res.data;
 };
 
@@ -169,12 +177,16 @@ export const getFiles = async () => {
   return res.data;
 };
 
+const getToken = () => localStorage.getItem('zdt_admin_token') || '';
+
 export const getStreamUrl = (filename: string) => {
-  return `${API_BASE}/api/stream/${encodeURIComponent(filename)}`;
+  const token = getToken();
+  return `${API_BASE}/api/stream/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
 };
 
 export const getDownloadUrl = (filename: string) => {
-  return `${API_BASE}/api/dl/${encodeURIComponent(filename)}`;
+  const token = getToken();
+  return `${API_BASE}/api/dl/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
 };
 
 export const uploadFile = async (file: File) => {
@@ -188,5 +200,34 @@ export const uploadFile = async (file: File) => {
 
 export const updateStoragePath = async (target_dir: string) => {
   const res = await api.post('/api/settings/storage', { target_dir });
+  return res.data;
+};
+
+// === TELEGRAM ===
+
+export const getTelegramConfig = async () => {
+  const res = await api.get('/api/settings/telegram');
+  return res.data;
+};
+
+export const setTelegramConfig = async (data: Record<string, string | boolean>) => {
+  const res = await api.post('/api/settings/telegram', data);
+  return res.data;
+};
+
+export const testTelegram = async () => {
+  const res = await api.post('/api/settings/telegram/test');
+  return res.data;
+};
+
+// === AI API KEYS ===
+
+export const getAiKeys = async () => {
+  const res = await api.get('/api/settings/ai-keys');
+  return res.data;
+};
+
+export const setAiKeys = async (data: Record<string, string>) => {
+  const res = await api.post('/api/settings/ai-keys', data);
   return res.data;
 };

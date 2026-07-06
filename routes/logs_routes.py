@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 import os
 import time
+import subprocess
 
 from auth import requires_auth
 from middleware import sse_connect, sse_disconnect
@@ -10,25 +11,40 @@ logs_bp = Blueprint('logs', __name__)
 LOG_PATH = '/tmp/zdt_api_task.log'
 
 
+def is_task_running():
+    # Check standalone binaries
+    for proc in ['yt-dlp', 'spotdl', 'ffmpeg']:
+        try:
+            r = subprocess.run(['pgrep', '-x', proc], capture_output=True, timeout=2)
+            if r.returncode == 0:
+                return True
+        except Exception:
+            pass
+    # Check zdt utility arguments specifically to avoid matching zdt-api itself
+    for arg in ['--bersih-nama-all', '--sync-lirik-all']:
+        try:
+            r = subprocess.run(['pgrep', '-f', arg], capture_output=True, timeout=2)
+            if r.returncode == 0:
+                return True
+        except Exception:
+            pass
+    return False
+
+
 @logs_bp.route('/api/logs', methods=['GET'])
 @requires_auth
 def get_logs():
     """Get recent log entries."""
     try:
+        running = is_task_running()
         if not os.path.exists(LOG_PATH):
-            return jsonify({'logs': [], 'running': False})
+            return jsonify({'logs': [], 'running': running})
         
         with open(LOG_PATH) as f:
             lines = f.readlines()
         
         # Last 100 lines
         recent_lines = lines[-100:]
-        
-        # Check if task is running
-        running = False
-        for line in recent_lines:
-            if 'Task' in line and ('started' in line.lower() or 'running' in line.lower()):
-                running = True
         
         return jsonify({
             'logs': [{'line': l.rstrip(), 'timestamp': time.time()} for l in recent_lines],
@@ -47,8 +63,13 @@ def stream_logs():
     
     def generate():
         last_size = 0
+        start_time = time.time()
+        max_duration = 3600  # Auto-disconnect after 1 hour
         try:
             while True:
+                if time.time() - start_time > max_duration:
+                    yield f'event: close\ndata: Connection timeout\n\n'
+                    break
                 if os.path.exists(LOG_PATH):
                     current_size = os.path.getsize(LOG_PATH)
                     if current_size > last_size:

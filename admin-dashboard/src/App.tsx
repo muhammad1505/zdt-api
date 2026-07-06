@@ -9,6 +9,7 @@ import UsersPage from './pages/UsersPage';
 import LogsPage from './pages/LogsPage';
 import ToolsPage from './pages/ToolsPage';
 import SettingsPage from './pages/SettingsPage';
+import FilesPage from './pages/FilesPage';
 
 export default function App() {
   const { user, loading, error, isAuthenticated, login, logout } = useAuth();
@@ -30,6 +31,7 @@ export default function App() {
         <main style={{ marginLeft: 240, flex: 1, padding: 32, minHeight: '100vh' }}>
           <Routes>
             <Route path="/" element={<ProtectedRoute isAuthenticated={isAuthenticated}><DashboardPage /></ProtectedRoute>} />
+            <Route path="/files" element={<ProtectedRoute isAuthenticated={isAuthenticated}><FilesPage /></ProtectedRoute>} />
             <Route path="/keys" element={<ProtectedRoute isAuthenticated={isAuthenticated}><ApiKeysPage /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute isAuthenticated={isAuthenticated}><UsersPage /></ProtectedRoute>} />
             <Route path="/tools" element={<ProtectedRoute isAuthenticated={isAuthenticated}><ToolsPage /></ProtectedRoute>} />

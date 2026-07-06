@@ -1,0 +1,17 @@
+[Unit]
+Description=ZDT Telegram Bot - AI Assistant & Media Downloader
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+WorkingDirectory=__ZDT_API_DIR__
+ExecStart=__PYTHON__ __ZDT_API_DIR__/zdt-telegram.py
+Restart=on-failure
+RestartSec=5
+RestartMaxDelaySec=30
+
+[Install]
+WantedBy=multi-user.target
