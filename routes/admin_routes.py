@@ -410,23 +410,27 @@ def vpn_status():
 @requires_admin
 def vpn_connect():
     try:
-        result = subprocess.run(
-            ['sudo', '/usr/local/bin/zdt-vpn.sh', 'connect'],
+        import time
+        # Try restart first to handle stale sessions
+        restart = subprocess.run(
+            ['sudo', '/usr/local/bin/zdt-vpn.sh', 'restart'],
             capture_output=True, text=True, timeout=15
         )
-        if result.returncode != 0:
-            log_vpn_event('connect', 'failed', result.stderr.strip())
-            return jsonify({'error': 'Gagal connect VPN: ' + result.stderr.strip()}), 500
-        import time
-        for _ in range(10):
+        if restart.returncode != 0:
+            # Fallback: direct connect
+            subprocess.run(
+                ['sudo', '/usr/local/bin/zdt-vpn.sh', 'connect'],
+                capture_output=True, text=True, timeout=15
+            )
+        for _ in range(15):
             time.sleep(1)
             ppp = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
                                  capture_output=True, text=True, timeout=5)
             if ppp.returncode == 0:
                 log_vpn_event('connect', 'success', 'VPN connected successfully')
                 return jsonify({'success': True, 'message': 'VPN connected'})
-        log_vpn_event('connect', 'failed', 'ppp0 did not appear after 10s')
-        return jsonify({'error': 'ppp0 interface did not appear after 10 seconds'}), 500
+        log_vpn_event('connect', 'failed', 'ppp0 did not appear after 15s')
+        return jsonify({'error': 'ppp0 interface did not appear after 15 seconds'}), 500
     except Exception as e:
         log_vpn_event('connect', 'failed', str(e))
         return jsonify({'error': str(e)}), 500
@@ -455,6 +459,29 @@ def vpn_disconnect():
         return jsonify({'error': 'ppp0 interface still present after 10 seconds'}), 500
     except Exception as e:
         log_vpn_event('disconnect', 'failed', str(e))
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/vpn/restart', methods=['POST'])
+@requires_admin
+def vpn_restart():
+    try:
+        result = subprocess.run(
+            ['sudo', '/usr/local/bin/zdt-vpn.sh', 'restart'],
+            capture_output=True, text=True, timeout=20
+        )
+        import time
+        for _ in range(15):
+            time.sleep(1)
+            ppp = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
+                                 capture_output=True, text=True, timeout=5)
+            if ppp.returncode == 0:
+                log_vpn_event('restart', 'success', 'VPN restarted successfully')
+                return jsonify({'success': True, 'message': 'VPN restarted'})
+        log_vpn_event('restart', 'failed', 'ppp0 did not appear after restart')
+        return jsonify({'error': 'ppp0 did not appear after restart'}), 500
+    except Exception as e:
+        log_vpn_event('restart', 'failed', str(e))
         return jsonify({'error': str(e)}), 500
 
 
