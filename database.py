@@ -367,6 +367,7 @@ def revoke_api_key(key_id):
 
 def delete_api_key(key_id):
     conn = get_connection()
+    conn.execute('UPDATE activity_logs SET api_key_id = NULL WHERE api_key_id = ?', (key_id,))
     conn.execute('DELETE FROM api_keys WHERE key_id = ?', (key_id,))
     conn.commit()
 

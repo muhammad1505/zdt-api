@@ -1,29 +1,27 @@
 import { useState, useEffect, useRef } from 'react';
 import { executeTool } from '../api/client';
 import api from '../api/client';
-import { Wrench, RefreshCw, Trash2, FileText, Music, Disc3, MicOff, Terminal } from 'lucide-react';
+import { RefreshCw, Trash2, FileText, Music, Disc3, MicOff, Terminal, RotateCw } from 'lucide-react';
 import FileBrowser from '../components/FileBrowser';
 import Swal from 'sweetalert2';
 
 const TOOLS = [
-  { action: 'clean', icon: RefreshCw, label: 'Clean Names', desc: 'Bersihkan nama file dari label ZDT, bisa pilih folder tertentu', color: '#00F0FF' },
-  { action: 'playlist', icon: FileText, label: 'Generate Playlist', desc: 'Buat ZDT_Playlist.m3u dari file MP3', color: '#00FF88' },
-  { action: 'sync_lyrics', icon: Music, label: 'Sync Lyrics', desc: 'Sync lirik ke semua file lagu, bisa pilih folder tertentu', color: '#FCE205' },
-  { action: 'compress', icon: Disc3, label: 'Compress Media', desc: 'Kompres video/audio dengan ffmpeg, pilih file atau folder', color: '#FF8800' },
-  { action: 'demucs', icon: MicOff, label: 'Remove Vocal', desc: 'Pisah vokal dari instrumen pake AI Demucs, pilih file atau folder', color: '#FF00FF' },
-  { action: 'delete_all', icon: Trash2, label: 'Delete All Media', desc: 'HAPUS SEMUA file media di target dir atau folder tertentu', color: '#FF003C' },
+  { action: 'clean', icon: RefreshCw, label: 'Clean Names', desc: 'Bersihkan nama file dari label ZDT, bisa pilih folder tertentu', color: '#465fff' },
+  { action: 'playlist', icon: FileText, label: 'Generate Playlist', desc: 'Buat ZDT_Playlist.m3u dari file MP3', color: '#12b76a' },
+  { action: 'sync_lyrics', icon: Music, label: 'Sync Lyrics', desc: 'Sync lirik ke semua file lagu, bisa pilih folder tertentu', color: '#f79009' },
+  { action: 'compress', icon: Disc3, label: 'Compress Media', desc: 'Kompres video/audio dengan ffmpeg, pilih file atau folder', color: '#f97066' },
+  { action: 'demucs', icon: MicOff, label: 'Remove Vocal', desc: 'Pisah vokal dari instrumen pake AI Demucs, pilih file atau folder', color: '#ee46bc' },
+  { action: 'delete_all', icon: Trash2, label: 'Delete All Media', desc: 'HAPUS SEMUA file media di target dir atau folder tertentu', color: '#f04438' },
 ];
 
 const BROWSER_TOOLS = new Set(['clean', 'sync_lyrics', 'compress', 'demucs', 'delete_all']);
 const MULTI_FILE = new Set(['compress', 'demucs']);
-
 const SYNC_TOOLS = new Set(['playlist']);
+const DONE_PATTERNS = ['done', 'selesai', 'deleted', 'created', 'playlist created'];
 
 function toast(icon: 'success' | 'error' | 'info', title: string) {
-  Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 4000, background: '#13131A', color: '#E0E0FF' });
+  Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 4000, background: '#ffffff', color: '#1d2939', customClass: { container: '!z-[999999]' } });
 }
-
-const DONE_PATTERNS = ['done', 'selesai', 'deleted', 'created', 'playlist created'];
 
 export default function ToolsPage() {
   const [running, setRunning] = useState<string | null>(null);
@@ -33,41 +31,20 @@ export default function ToolsPage() {
   const prevTaskRunning = useRef(false);
   const currentAction = useRef<string | null>(null);
   const notified = useRef(false);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [confirm, setConfirm] = useState<{ action: string; label: string; desc: string; color: string } | null>(null);
+  const [showBrowser, setShowBrowser] = useState<{ action: string; color: string } | null>(null);
 
-  const clearLog = async () => {
-    try { await api.post('/api/logs/clear'); } catch {}
-  };
+  const clearLog = async () => { try { await api.post('/api/logs/clear'); } catch {} };
 
   const checkDone = (action: string, logLines: string[], subprocRunning: boolean) => {
     if (notified.current) return;
     const last = logLines.filter(Boolean).pop()?.toLowerCase() || '';
-
     const hasDoneWord = DONE_PATTERNS.some(p => last.includes(p));
     const hasError = last.includes('error') || last.includes('gagal');
-
-    if (hasError) {
-      toast('error', `${action} gagal`);
-      notified.current = true;
-      setRunning(null);
-      currentAction.current = null;
-      return;
-    }
-
-    if (hasDoneWord) {
-      toast('success', `${action} selesai`);
-      notified.current = true;
-      setRunning(null);
-      currentAction.current = null;
-      return;
-    }
-
-    if (!subprocRunning && prevTaskRunning.current) {
-      toast('success', `${action} selesai`);
-      notified.current = true;
-      setRunning(null);
-      currentAction.current = null;
-      return;
-    }
+    if (hasError) { toast('error', `${action} gagal`); notified.current = true; setRunning(null); currentAction.current = null; return; }
+    if (hasDoneWord) { toast('success', `${action} selesai`); notified.current = true; setRunning(null); currentAction.current = null; return; }
+    if (!subprocRunning && prevTaskRunning.current) { toast('success', `${action} selesai`); notified.current = true; setRunning(null); currentAction.current = null; return; }
   };
 
   const fetchLogs = async () => {
@@ -75,116 +52,78 @@ export default function ToolsPage() {
       const res = await api.get('/api/logs');
       const lines: string[] = (res.data.logs || []).map((l: any) => l.line);
       const subRunning = !!res.data.running;
-      setLogs(lines);
-      setTaskRunning(subRunning);
-
-      if (currentAction.current && !notified.current) {
-        checkDone(currentAction.current, lines, subRunning);
-      }
+      setLogs(lines); setTaskRunning(subRunning);
+      if (currentAction.current && !notified.current) checkDone(currentAction.current, lines, subRunning);
       prevTaskRunning.current = subRunning;
+      if (!subRunning && !currentAction.current && lines.length > 0) {
+        if (idleTimer.current) clearTimeout(idleTimer.current);
+        idleTimer.current = setTimeout(() => { clearLog(); setLogs([]); }, 8000);
+      } else { if (idleTimer.current) { clearTimeout(idleTimer.current); idleTimer.current = null; } }
     } catch {}
   };
 
   useEffect(() => {
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 2000);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval>;
+    const start = () => { clearInterval(interval); fetchLogs(); interval = setInterval(fetchLogs, 2000); };
+    const onVis = () => { if (!document.hidden) start(); };
+    start();
+    document.addEventListener('visibilitychange', onVis);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVis); };
   }, []);
 
-  useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
-  }, [logs]);
-
-  const [confirm, setConfirm] = useState<{ action: string; label: string; desc: string; color: string } | null>(null);
-  const [showBrowser, setShowBrowser] = useState<{ action: string; color: string } | null>(null);
+  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [logs]);
 
   const runTool = async (action: string, files?: string[], folder?: string) => {
-    setRunning(action);
-    currentAction.current = action;
-    notified.current = false;
-    prevTaskRunning.current = false;
-    await clearLog();
-    setConfirm(null);
-    setShowBrowser(null);
+    setRunning(action); currentAction.current = action; notified.current = false; prevTaskRunning.current = false;
+    if (idleTimer.current) { clearTimeout(idleTimer.current); idleTimer.current = null; }
+    await clearLog(); setConfirm(null); setShowBrowser(null);
     try {
       const firstFile = files && files.length > 0 ? files[0] : undefined;
       const data = await executeTool(action, firstFile, folder || undefined);
-      if (!data.success) {
-        toast('error', `${action}: ${data.error || 'Gagal'}`);
-        setRunning(null);
-        currentAction.current = null;
-        notified.current = true;
-        return;
-      }
-      if (SYNC_TOOLS.has(action)) {
-        setTimeout(() => fetchLogs(), 500);
-      }
-    } catch (e: any) {
-      toast('error', `${action}: ${e.message}`);
-      setRunning(null);
-      currentAction.current = null;
-      notified.current = true;
-    }
+      if (!data.success) { toast('error', `${action}: ${data.error || 'Gagal'}`); setRunning(null); currentAction.current = null; notified.current = true; return; }
+      if (SYNC_TOOLS.has(action)) setTimeout(() => fetchLogs(), 500);
+    } catch (e: any) { toast('error', `${action}: ${e.message}`); setRunning(null); currentAction.current = null; notified.current = true; }
   };
 
   const handleBrowserSelect = (files: string[], folder: string) => {
-    if (showBrowser) {
-      runTool(showBrowser.action, files, folder);
-    }
-  };
-
-  const s = {
-    title: { fontSize: 20, fontWeight: 'bold' as const, marginBottom: 24, color: '#E0E0FF' },
-    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 },
-    card: {
-      background: '#13131A', borderRadius: 12, padding: 20,
-      border: '1px solid #2A2A3C', cursor: 'pointer',
-      transition: 'all 0.15s',
-    },
-    iconBox: { padding: 8, borderRadius: 8, background: '#1F1F2C', display: 'inline-flex', marginBottom: 12 },
-    label: { color: '#E0E0FF', fontWeight: 600, fontSize: 14, marginBottom: 4 },
-    desc: { color: '#6B6B80', fontSize: 12, lineHeight: '1.4' },
+    if (showBrowser) runTool(showBrowser.action, files, folder);
   };
 
   const needsFile = (a: string) => a === 'compress' || a === 'demucs';
-  const toolIcon = (action: string, color: string) => {
-    const t = TOOLS.find(x => x.action === action);
-    return t ? <t.icon size={18} color={color} /> : null;
-  };
 
   const openTool = (tool: typeof TOOLS[number]) => {
     if (running) return;
-    if (BROWSER_TOOLS.has(tool.action)) {
-      setShowBrowser({ action: tool.action, color: tool.color });
-    } else {
-      setConfirm({ action: tool.action, label: tool.label, desc: tool.desc, color: tool.color });
-    }
+    if (BROWSER_TOOLS.has(tool.action)) setShowBrowser({ action: tool.action, color: tool.color });
+    else setConfirm({ action: tool.action, label: tool.label, desc: tool.desc, color: tool.color });
   };
 
   return (
-    <div>
-      <h2 style={s.title}>
-        <Wrench size={20} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-        Server Tools
-      </h2>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Server Tools</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Run maintenance and processing tools</p>
+      </div>
 
-      <div style={s.grid}>
-        {TOOLS.map(tool => (
-          <div
-            key={tool.action}
-            style={{...s.card, opacity: running?.startsWith(tool.action) ? 0.5 : 1}}
-            onClick={() => openTool(tool)}
-          >
-            <div style={{...s.iconBox, background: tool.color + '22'}}>
-              <tool.icon color={tool.color} size={20} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+        {TOOLS.map(tool => {
+          const Icon = tool.icon;
+          return (
+            <div
+              key={tool.action}
+              className={`rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6 cursor-pointer transition-all duration-150 hover:shadow-theme-sm ${
+                running?.startsWith(tool.action) ? 'opacity-50 pointer-events-none' : ''
+              }`}
+              onClick={() => openTool(tool)}
+            >
+              <div className="flex items-center justify-center w-12 h-12 rounded-xl mb-4" style={{ background: tool.color + '15' }}>
+                <Icon size={22} style={{ color: tool.color }} />
+              </div>
+              <h3 className="text-base font-medium text-gray-800 dark:text-white/90 mb-1">{tool.label}</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{tool.desc}</p>
+              {running === tool.action && <div className="text-xs text-warning-600 dark:text-warning-500 mt-3 font-medium">Processing...</div>}
             </div>
-            <div style={s.label}>{tool.label}</div>
-            <div style={s.desc}>{tool.desc}</div>
-            {running === tool.action && <div style={{color: '#FCE205', fontSize: 12, marginTop: 8}}>Processing...</div>}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {showBrowser && (
@@ -198,65 +137,51 @@ export default function ToolsPage() {
       )}
 
       {confirm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#13131A', borderRadius: 12, padding: 24, border: '1px solid #2A2A3C', width: 420 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <div style={{ padding: 6, borderRadius: 8, background: confirm.color + '22' }}>
-                {toolIcon(confirm.action, confirm.color)}
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 w-[420px] max-w-[90%] shadow-theme-md">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2 rounded-lg" style={{ background: confirm.color + '20' }}>
+                {(() => {
+                  const t = TOOLS.find(x => x.action === confirm.action);
+                  return t ? <t.icon size={20} style={{ color: confirm.color }} /> : null;
+                })()}
               </div>
-              <h3 style={{ color: '#E0E0FF', fontSize: 16, margin: 0 }}>{confirm.label}</h3>
+              <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 m-0">{confirm.label}</h3>
             </div>
-            <p style={{ color: '#6B6B80', fontSize: 13, margin: '0 0 16px', lineHeight: '1.5' }}>{confirm.desc}</p>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <p className="text-sm text-gray-500 dark:text-gray-400 m-0 mb-4 leading-relaxed">{confirm.desc}</p>
+            <div className="flex gap-2 justify-end">
               <button onClick={() => setConfirm(null)}
-                style={{ padding: '8px 18px', borderRadius: 8, background: '#1F1F2C', color: '#E0E0FF', border: '1px solid #2A2A3C', cursor: 'pointer', fontWeight: 'bold', fontSize: 13 }}>
-                Batal
-              </button>
+                className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Batal</button>
               <button onClick={() => runTool(confirm.action)}
-                style={{ padding: '8px 18px', borderRadius: 8, background: confirm.color, color: '#09090E', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: 13 }}>
-                Konfirmasi
-              </button>
+                className="px-4 py-2 rounded-lg border-none cursor-pointer text-white text-sm font-medium hover:brightness-110 transition-all"
+                style={{ background: confirm.color }}>Konfirmasi</button>
             </div>
           </div>
         </div>
       )}
 
       {(running || logs.length > 0 || taskRunning) && (
-        <div style={{
-          background: running ? '#1F1F2C' : '#13131A',
-          borderRadius: 12,
-          border: '1px solid ' + (running ? '#FCE205' : '#2A2A3C'),
-          marginTop: 20, overflow: 'hidden'
-        }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '12px 16px', borderBottom: '1px solid #1F1F2C'
-          }}>
-            <Terminal size={16} color={running ? '#FCE205' : '#6B6B80'} />
-            <span style={{ color: running ? '#FCE205' : '#6B6B80', fontSize: 13, fontWeight: 'bold' }}>
+        <div className={`fixed bottom-5 right-5 z-[99999] w-[480px] max-h-80 rounded-2xl border overflow-hidden flex flex-col shadow-theme-lg ${
+          running ? 'border-warning-300 dark:border-warning-500/40' : 'border-gray-200 dark:border-gray-700'
+        } bg-white dark:bg-gray-900`}>
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 dark:border-gray-800 shrink-0">
+            <Terminal size={14} className={running ? 'text-warning-600 dark:text-warning-500' : 'text-gray-500 dark:text-gray-400'} />
+            <span className={`text-xs font-semibold flex-1 ${running ? 'text-warning-600 dark:text-warning-500' : 'text-gray-500 dark:text-gray-400'}`}>
               {running ? `Processing ${running}...` : 'Task Log'}
             </span>
-            <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-              <button onClick={fetchLogs} style={{
-                padding: '4px 8px', background: '#09090E', color: '#6B6B80',
-                border: '1px solid #2A2A3C', borderRadius: 4, cursor: 'pointer', fontSize: 11
-              }}><RefreshCw size={12} /></button>
-            </span>
+            <button onClick={fetchLogs}
+              className="p-1 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700 cursor-pointer text-[10px] hover:text-gray-700 dark:hover:text-gray-300 transition-colors"><RotateCw size={11} /></button>
           </div>
-          <div ref={logRef} style={{
-            padding: 16, maxHeight: 300, overflow: 'auto',
-            fontFamily: 'monospace', fontSize: 12, color: '#E0E0FF',
-            lineHeight: '1.6', background: '#09090E'
-          }}>
+          <div ref={logRef} className="flex-1 p-3 overflow-auto font-mono text-xs leading-relaxed bg-gray-50 dark:bg-gray-950" style={{ maxHeight: 240 }}>
             {logs.length === 0 ? (
-              <span style={{ color: '#6B6B80' }}>No log entries yet.</span>
+              <span className="text-gray-500 dark:text-gray-400">No log entries yet.</span>
             ) : logs.map((line, i) => (
-              <div key={i} style={{
-                color: line.includes('ERROR') || line.includes('Error') || line.includes('gagal') ? '#FF003C'
-                     : line.includes('WARNING') ? '#FCE205'
-                     : line.includes('INFO') ? '#00F0FF'
-                     : '#E0E0FF'
-              }}>{line}</div>
+              <div key={i} className={
+                line.includes('ERROR') || line.includes('Error') || line.includes('gagal') ? 'text-error-600 dark:text-error-500'
+                : line.includes('WARNING') ? 'text-warning-600 dark:text-warning-500'
+                : line.includes('INFO') ? 'text-brand-600 dark:text-brand-400'
+                : 'text-gray-800 dark:text-white/90'
+              }>{line}</div>
             ))}
           </div>
         </div>

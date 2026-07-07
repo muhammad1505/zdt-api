@@ -658,11 +658,6 @@ print(json.dumps(payload))
             if [ -n "$ai_response" ]; then
                 ai_used=true
                 
-                # Save raw AI response to history
-                local resp_escaped
-                resp_escaped=$(echo "$ai_response" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g' | tr '\n' ' ')
-                _zaki_add_history "assistant" "$resp_escaped"
-                
                 if command -v python3 >/dev/null 2>&1; then
                     clean_reply=$(echo "$ai_response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('reply',''))" 2>/dev/null)
                     action_intent=$(echo "$ai_response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('intent',''))" 2>/dev/null)
@@ -670,6 +665,11 @@ print(json.dumps(payload))
                 else
                     clean_reply="$ai_response"
                 fi
+                
+                # Save clean reply (not raw JSON) to history
+                local resp_escaped
+                resp_escaped=$(echo "$clean_reply" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g' | tr '\n' ' ')
+                _zaki_add_history "assistant" "$resp_escaped"
                 
                 if [ -n "$action_intent" ]; then
                     is_auto_action=true

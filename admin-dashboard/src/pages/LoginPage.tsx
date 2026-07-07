@@ -18,82 +18,52 @@ export default function LoginPage({ onLogin, error, loading }: Props) {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', background: '#09090E', padding: 20
-    }}>
-      <div style={{
-        width: 400, maxWidth: '100%', padding: 40,
-        background: '#13131A', borderRadius: 16,
-        border: '1px solid #2A2A3C'
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <Server color="#00F0FF" size={48} style={{ marginBottom: 12 }} />
-          <h1 style={{ color: '#00F0FF', fontSize: 24, fontWeight: 'bold', margin: 0 }}>
-            ZDT Admin
-          </h1>
-          <p style={{ color: '#6B6B80', fontSize: 14, marginTop: 4 }}>
-            Server Management Dashboard
-          </p>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 p-5">
+      <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-8 shadow-theme-md">
+        <div className="text-center mb-8">
+          <div className="w-14 h-14 rounded-xl bg-brand-500 flex items-center justify-center mx-auto mb-4">
+            <Server size={28} className="text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white/90 m-0">ZDT Admin</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Server Management Dashboard</p>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 6 }}>
-              USERNAME
-            </label>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Username</label>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              style={{
-                width: '100%', padding: '12px 16px', borderRadius: 8,
-                background: '#09090E', border: '1px solid #2A2A3C',
-                color: '#E0E0FF', fontSize: 14, outline: 'none',
-                boxSizing: 'border-box'
-              }}
+              className="w-full px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 focus:ring-3 focus:ring-brand-500/10 transition-colors box-border"
             />
           </div>
 
-          <div style={{ marginBottom: 24 }}>
-            <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 6 }}>
-              PASSWORD
-            </label>
-            <div style={{ position: 'relative' }}>
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Password</label>
+            <div className="relative">
               <input
                 type={showPw ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                style={{
-                  width: '100%', padding: '12px 16px', borderRadius: 8,
-                  background: '#09090E', border: '1px solid #2A2A3C',
-                  color: '#E0E0FF', fontSize: 14, outline: 'none',
-                  boxSizing: 'border-box', paddingRight: 40
-                }}
+                className="w-full px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 focus:ring-3 focus:ring-brand-500/10 transition-colors box-border pr-10"
               />
               <button type="button" onClick={() => setShowPw(!showPw)}
-                style={{ position: 'absolute', right: 12, top: 10, background: 'none', border: 'none', cursor: 'pointer', color: '#6B6B80' }}
-              >
+                className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-none cursor-pointer text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-0">
                 {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>
 
           {error && (
-            <div style={{ color: '#FF003C', fontSize: 13, marginBottom: 16, textAlign: 'center' }}>
+            <div className="mb-4 text-sm text-error-600 dark:text-error-500 text-center bg-error-50 dark:bg-error-500/5 rounded-lg px-3 py-2 border border-error-100 dark:border-error-500/20">
               {error}
             </div>
           )}
 
           <button type="submit" disabled={loading}
-            style={{
-              width: '100%', padding: '12px', borderRadius: 8,
-              background: loading ? '#1F1F2C' : '#00F0FF',
-              color: loading ? '#6B6B80' : '#09090E',
-              fontWeight: 'bold', fontSize: 16, border: 'none',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
+            className="w-full py-2.5 rounded-lg bg-brand-500 text-white font-semibold text-sm border-none cursor-pointer transition-all hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Loading...' : 'Login'}
+            {loading ? 'Loading...' : 'Sign In'}
           </button>
         </form>
       </div>

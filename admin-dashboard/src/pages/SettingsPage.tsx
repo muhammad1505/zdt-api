@@ -4,9 +4,9 @@ import Swal from 'sweetalert2';
 import {
   updateStoragePath, getVpnStatus, vpnConnect, vpnDisconnect, getVpnConfig, setVpnConfig,
   getServices, manageService, restartApi, shutdownServer, getSystemStatus,
-  getConfig, updateConfig,
   getTelegramConfig, setTelegramConfig, testTelegram,
   getAiKeys, setAiKeys,
+  getConfig, updateConfig,
 } from '../api/client';
 import {
   Wifi, WifiOff, Settings, Save,
@@ -14,8 +14,6 @@ import {
   MessageCircle, Send, Key, Folder, RefreshCw, Play,
 } from 'lucide-react';
 import FileBrowser from '../components/FileBrowser';
-
-// ─── Types ───────────────────────────────────────────
 
 interface VpnSt { connected: boolean; ip: string; interface: string; service_active: boolean; service_enabled: boolean; }
 interface Svc { name: string; active: string; enabled: string; }
@@ -33,39 +31,31 @@ const SERVICE_LABELS: Record<string, string> = {
   'zdt-scheduler': 'Scheduler', 'zdt-watch': 'File Watcher', 'zdt-tunnel': 'Tunnel',
 };
 
-// ─── Component ───────────────────────────────────────
-
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') || 'services';
 
   const toast = (icon: 'success' | 'error' | 'info', title: string) => {
-    Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, background: '#13131A', color: '#E0E0FF' });
+    Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, background: '#ffffff', color: '#1d2939', customClass: { container: '!z-[999999]' } });
   };
 
   const setTab = (t: string) => setSearchParams({ tab: t });
 
-  const input = { width: '100%', padding: '10px 14px', borderRadius: 8, background: '#09090E', border: '1px solid #2A2A3C', color: '#E0E0FF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' };
-
   return (
-    <div>
-      <h2 style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 20, color: '#E0E0FF' }}>
-        <Settings size={20} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-        Settings
-      </h2>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Settings</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage server configuration</p>
+      </div>
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid #2A2A3C', paddingBottom: 0 }}>
+      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-800">
         {TABS.map(t => {
           const active = tab === t.key;
           return (
             <button key={t.key} onClick={() => setTab(t.key)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px',
-                border: 'none', borderBottom: active ? '2px solid #00F0FF' : '2px solid transparent',
-                background: 'transparent', color: active ? '#00F0FF' : '#6B6B80',
-                fontWeight: active ? 'bold' : 'normal', fontSize: 14, cursor: 'pointer',
-                transition: 'all 0.15s',
-              }}>
+              className={`flex items-center gap-1.5 px-4 py-2.5 border-none bg-transparent text-sm cursor-pointer transition-all border-b-2 ${
+                active ? 'text-brand-600 dark:text-brand-400 font-semibold border-brand-500' : 'text-gray-500 dark:text-gray-400 font-normal border-transparent hover:text-gray-700 dark:hover:text-gray-300'
+              }`}>
               <t.icon size={16} /> {t.label}
             </button>
           );
@@ -73,15 +63,13 @@ export default function SettingsPage() {
       </div>
 
       {tab === 'services' && <ServicesTab toast={toast} />}
-      {tab === 'vpn' && <VpnTab input={input} toast={toast} />}
+      {tab === 'vpn' && <VpnTab toast={toast} />}
       {tab === 'telegram' && <TelegramTab toast={toast} />}
       {tab === 'ai' && <AiKeysTab toast={toast} />}
       {tab === 'config' && <ConfigTab toast={toast} />}
     </div>
   );
 }
-
-// ═════════════════ SERVICES TAB ══════════════════════
 
 function ServicesTab({ toast }: { toast: any }) {
   const [services, setServices] = useState<Svc[]>([]);
@@ -102,107 +90,107 @@ function ServicesTab({ toast }: { toast: any }) {
     try {
       const res = await manageService(name, action);
       toast('success', res.message || `${name} ${action} berhasil`);
-      setTimeout(fetch, 1000);
-    } catch (e: any) {
-      toast('error', e.response?.data?.error || 'Gagal ' + action);
-    }
+      setServices(prev => prev.map(s =>
+        s.name === name
+          ? {
+              ...s,
+              active: action === 'start' ? 'active' : action === 'stop' ? 'inactive' : s.active,
+              enabled: action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : s.enabled,
+            }
+          : s
+      ));
+      setTimeout(fetch, 1500);
+    } catch (e: any) { toast('error', e.response?.data?.error || 'Gagal ' + action); }
     setActionLoading(null);
   };
 
   const handleRestart = async () => {
-    const res = await Swal.fire({ title: 'Restart API Server?', text: 'Koneksi akan terputus sementara', icon: 'warning', showCancelButton: true, confirmButtonColor: '#FF003C', cancelButtonColor: '#6B6B80', confirmButtonText: 'Restart', background: '#13131A', color: '#E0E0FF' });
+    const res = await Swal.fire({ title: 'Restart API Server?', text: 'Koneksi akan terputus sementara', icon: 'warning', showCancelButton: true, confirmButtonColor: '#f04438', cancelButtonColor: '#667085', confirmButtonText: 'Restart', background: '#ffffff', color: '#1d2939' });
     if (!res.isConfirmed) return;
     setActionLoading('restart-api');
-    try {
-      const d = await restartApi();
-      setServerStatus(d.message);
-      toast('success', 'Restart initiated');
-    } catch (e: any) { toast('error', e.response?.data?.error || 'Gagal'); }
+    try { const d = await restartApi(); setServerStatus(d.message); toast('success', 'Restart initiated'); }
+    catch (e: any) { toast('error', e.response?.data?.error || 'Gagal'); }
     setActionLoading(null);
   };
 
   const handleShutdown = async () => {
-    const res = await Swal.fire({ title: 'Matikan Server?', text: 'Server akan dimatikan total!', icon: 'warning', showCancelButton: true, confirmButtonColor: '#FF003C', cancelButtonColor: '#6B6B80', confirmButtonText: 'Shutdown', background: '#13131A', color: '#E0E0FF' });
+    const res = await Swal.fire({ title: 'Matikan Server?', text: 'Server akan dimatikan total!', icon: 'warning', showCancelButton: true, confirmButtonColor: '#f04438', cancelButtonColor: '#667085', confirmButtonText: 'Shutdown', background: '#ffffff', color: '#1d2939' });
     if (!res.isConfirmed) return;
-    try {
-      await shutdownServer();
-      toast('info', 'Shutdown initiated');
-    } catch (e: any) { toast('error', e.response?.data?.error || 'Gagal'); }
+    try { await shutdownServer(); toast('info', 'Shutdown initiated'); } catch (e: any) { toast('error', e.response?.data?.error || 'Gagal'); }
   };
 
   const handleCheckStatus = async () => {
-    try {
-      const d = await getSystemStatus();
-      setServerStatus('API Server: ' + d.status);
-      toast('info', 'API Server: ' + d.status);
-    } catch { setServerStatus('Gagal cek status'); }
+    try { const d = await getSystemStatus(); setServerStatus('API Server: ' + d.status); toast('info', 'API Server: ' + d.status); }
+    catch { setServerStatus('Gagal cek status'); }
   };
 
-  const badge = (active: boolean) => ({
-    padding: '3px 10px', borderRadius: 4, fontSize: 12,
-    background: active ? '#00FF8820' : '#FF003C20',
-    color: active ? '#00FF88' : '#FF003C',
-  });
-  const eBadge = (enabled: boolean) => ({
-    padding: '3px 10px', borderRadius: 4, fontSize: 12,
-    background: enabled ? '#00F0FF20' : '#6B6B8020',
-    color: enabled ? '#00F0FF' : '#6B6B80',
-  });
-  const btn = (c: string) => ({ display: 'flex', alignItems: 'center' as const, gap: 4, padding: '6px 12px', borderRadius: 6, fontSize: 12, border: '1px solid #2A2A3C', background: 'transparent', color: c, cursor: 'pointer' });
+  const isActive = (v: string) => v === 'active';
+  const isEnabled = (v: string) => v === 'enabled';
 
   return (
-    <div>
-      {/* API Server Control */}
-      <div style={{ background: '#13131A', borderRadius: 12, padding: 20, border: '1px solid #2A2A3C', marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <Activity color="#00F0FF" size={20} />
-          <h3 style={{ color: '#E0E0FF', fontSize: 15, margin: 0 }}>API Server</h3>
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+        <div className="flex items-center gap-2.5 mb-4">
+          <Activity className="text-brand-500" size={20} />
+          <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">API Server</h3>
         </div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <button onClick={handleCheckStatus} style={btn('#E0E0FF')}><RefreshCw size={14} /> Check Status</button>
+        <div className="flex gap-3 flex-wrap">
+          <button onClick={handleCheckStatus}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-transparent cursor-pointer"><RefreshCw size={14} /> Check Status</button>
           <button onClick={handleRestart} disabled={actionLoading === 'restart-api'}
-            style={{ ...btn('#FCE205'), fontWeight: 'bold' }}><RotateCw size={14} /> Restart</button>
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-warning-600 dark:text-warning-500 text-sm font-medium hover:bg-warning-50 dark:hover:bg-warning-500/5 transition-colors bg-transparent cursor-pointer disabled:opacity-50"><RotateCw size={14} /> Restart</button>
           <button onClick={handleShutdown}
-            style={{ ...btn('#FF003C'), fontWeight: 'bold' }}><Power size={14} /> Shutdown</button>
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-error-600 dark:text-error-500 text-sm font-medium hover:bg-error-50 dark:hover:bg-error-500/5 transition-colors bg-transparent cursor-pointer"><Power size={14} /> Shutdown</button>
         </div>
-        {serverStatus && <div style={{ marginTop: 12, fontSize: 13, padding: 10, borderRadius: 8, background: '#1F1F2C', color: '#E0E0FF' }}>{serverStatus}</div>}
+        {serverStatus && <div className="mt-3 text-sm p-3 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-white/90 border border-gray-100 dark:border-gray-700">{serverStatus}</div>}
       </div>
 
-      {/* Services */}
-      {loading ? <div style={{ textAlign: 'center', padding: 40, color: '#6B6B80' }}>Loading...</div>
-      : services.map(svc => (
-        <div key={svc.name} style={{ background: '#13131A', borderRadius: 12, padding: 20, border: '1px solid #2A2A3C', marginBottom: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      {loading ? <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">Loading...</div>
+      : (
+        <>
+          {services.map(svc => (
+        <div key={svc.name} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+          <div className="flex justify-between items-center mb-3">
             <div>
-              <div style={{ color: '#E0E0FF', fontSize: 15, fontWeight: 'bold' }}>{SERVICE_LABELS[svc.name] || svc.name}</div>
-              <div style={{ color: '#6B6B80', fontSize: 12, fontFamily: 'monospace', marginTop: 2 }}>{svc.name}.service</div>
+              <div className="text-base font-medium text-gray-800 dark:text-white/90">{SERVICE_LABELS[svc.name] || svc.name}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-0.5">{svc.name}.service</div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={badge(svc.active === 'active')}>{svc.active === 'active' ? 'Running' : 'Stopped'}</span>
-              <span style={eBadge(svc.enabled === 'enabled')}>{svc.enabled === 'enabled' ? 'Auto' : 'Manual'}</span>
+            <div className="flex gap-2">
+              <span className={`px-2.5 py-0.5 rounded text-xs font-medium ${isActive(svc.active) ? 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' : 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500'}`}>
+                {isActive(svc.active) ? 'Running' : 'Stopped'}
+              </span>
+              <span className={`px-2.5 py-0.5 rounded text-xs font-medium ${isEnabled(svc.enabled) ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
+                {isEnabled(svc.enabled) ? 'Auto' : 'Manual'}
+              </span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button onClick={() => handleAction(svc.name, svc.active === 'active' ? 'stop' : 'start')} disabled={actionLoading?.startsWith(svc.name)} style={btn(svc.active === 'active' ? '#FF003C' : '#00FF88')}>
-              {svc.active === 'active' ? <Square size={12} /> : <Play size={12} />} {svc.active === 'active' ? 'Stop' : 'Start'}
+          <div className="flex gap-1.5 flex-wrap">
+            <button onClick={() => handleAction(svc.name, isActive(svc.active) ? 'stop' : 'start')} disabled={actionLoading?.startsWith(svc.name)}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs cursor-pointer border border-gray-200 dark:border-gray-700 bg-transparent disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
+                isActive(svc.active) ? 'text-error-600 dark:text-error-500' : 'text-success-600 dark:text-success-500'
+              }`}>
+              {isActive(svc.active) ? <Square size={12} /> : <Play size={12} />} {isActive(svc.active) ? 'Stop' : 'Start'}
             </button>
-            <button onClick={() => handleAction(svc.name, 'restart')} disabled={actionLoading?.startsWith(svc.name)} style={btn('#FCE205')}><RotateCw size={12} /> Restart</button>
-            <button onClick={() => handleAction(svc.name, svc.enabled === 'enabled' ? 'disable' : 'enable')} disabled={actionLoading?.startsWith(svc.name)}
-              style={btn(svc.enabled === 'enabled' ? '#FF8800' : '#00F0FF')}>
-              {svc.enabled === 'enabled' ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
-              {svc.enabled === 'enabled' ? 'Disable' : 'Enable'}
+            <button onClick={() => handleAction(svc.name, 'restart')} disabled={actionLoading?.startsWith(svc.name)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs cursor-pointer border border-gray-200 dark:border-gray-700 bg-transparent text-warning-600 dark:text-warning-500 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"><RotateCw size={12} /> Restart</button>
+            <button onClick={() => handleAction(svc.name, isEnabled(svc.enabled) ? 'disable' : 'enable')} disabled={actionLoading?.startsWith(svc.name)}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs cursor-pointer border border-gray-200 dark:border-gray-700 bg-transparent disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
+                isEnabled(svc.enabled) ? 'text-error-600 dark:text-error-500' : 'text-brand-600 dark:text-brand-400'
+              }`}>
+              {isEnabled(svc.enabled) ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
+              {isEnabled(svc.enabled) ? 'Disable' : 'Enable'}
             </button>
-            {actionLoading?.startsWith(svc.name) && <span style={{ color: '#FCE205', fontSize: 11, alignSelf: 'center' }}>Processing...</span>}
+            {actionLoading?.startsWith(svc.name) && <span className="text-xs text-warning-600 dark:text-warning-500 self-center">Processing...</span>}
           </div>
-        </div>
-      ))}
+          </div>
+        ))}
+        </>
+      )}
     </div>
   );
 }
 
-// ════════════════════ VPN TAB ════════════════════════
-
-function VpnTab({ input, toast }: { input: any; toast: any }) {
+function VpnTab({ toast }: { toast: any }) {
   const [status, setStatus] = useState<VpnSt | null>(null);
   const [loading, setLoading] = useState(true);
   const [al, setAl] = useState<string | null>(null);
@@ -220,11 +208,8 @@ function VpnTab({ input, toast }: { input: any; toast: any }) {
 
   const act = async (label: string, fn: () => Promise<any>) => {
     setAl(label);
-    try {
-      const r = await fn();
-      toast('success', r.message || label + ' berhasil');
-      fetch();
-    } catch (e: any) { toast('error', e.response?.data?.error || 'Gagal ' + label); }
+    try { const r = await fn(); toast('success', r.message || label + ' berhasil'); fetch(); }
+    catch (e: any) { toast('error', e.response?.data?.error || 'Gagal ' + label); }
     setAl(null);
   };
 
@@ -233,60 +218,67 @@ function VpnTab({ input, toast }: { input: any; toast: any }) {
     try {
       const d: Record<string,string> = { VPN_SERVER: s, VPN_USERNAME: u, VPN_AUTOSTART: auto };
       if (pw) d.VPN_PASSWORD = pw;
-      await setVpnConfig(d);
-      toast('success', 'Config saved');
-      fetch();
+      await setVpnConfig(d); toast('success', 'Config saved'); fetch();
     } catch (e: any) { toast('error', e.response?.data?.error || 'Gagal simpan'); }
     setAl(null);
   };
 
-  const box = { background: '#13131A', borderRadius: 12, padding: 24, border: '1px solid #2A2A3C', marginBottom: 20 };
-  const btn = (c: string) => ({ display: 'flex', alignItems: 'center' as const, gap: 8, padding: '8px 18px', borderRadius: 8, fontWeight: 'bold' as const, fontSize: 13, cursor: 'pointer', background: c, color: c === '#1F1F2C' ? '#E0E0FF' : '#09090E', border: c === '#1F1F2C' ? '1px solid #2A2A3C' : 'none' });
-
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#6B6B80' }}>Loading...</div>;
+  if (loading) return <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">Loading...</div>;
 
   return (
-    <div>
-      <div style={box}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          {status?.connected ? <Wifi color="#00FF88" size={28} /> : <WifiOff color="#FF003C" size={28} />}
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-6">
+        <div className="flex items-center gap-3 mb-5">
+          {status?.connected ? <Wifi className="text-success-500" size={28} /> : <WifiOff className="text-error-500" size={28} />}
           <div>
-            <div style={{ color: '#E0E0FF', fontSize: 18, fontWeight: 'bold' }}>{status?.connected ? 'Connected' : 'Disconnected'}</div>
-            <div style={{ color: '#6B6B80', fontSize: 13 }}>{status?.interface} {status?.ip && '· ' + status.ip}</div>
+            <div className="text-lg font-semibold text-gray-800 dark:text-white/90">{status?.connected ? 'Connected' : 'Disconnected'}</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">{status?.interface} {status?.ip && '· ' + status.ip}</div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-          <div style={{ flex: 1 }}><div style={{ color: '#6B6B80', fontSize: 12, marginBottom: 4 }}>Service</div><span style={{ padding: '4px 12px', borderRadius: 4, fontSize: 13, background: status?.service_active ? '#00FF8820' : '#FF003C20', color: status?.service_active ? '#00FF88' : '#FF003C' }}>{status?.service_active ? 'Active' : 'Inactive'}</span></div>
-          <div style={{ flex: 1 }}><div style={{ color: '#6B6B80', fontSize: 12, marginBottom: 4 }}>Auto Start</div><span style={{ padding: '4px 12px', borderRadius: 4, fontSize: 13, background: status?.service_enabled ? '#00FF8820' : '#6B6B8020', color: status?.service_enabled ? '#00FF88' : '#6B6B80' }}>{status?.service_enabled ? 'Enabled' : 'Disabled'}</span></div>
+        <div className="flex gap-4 mb-4">
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Service</div>
+            <span className={`px-3 py-1 rounded text-xs font-medium ${status?.service_active ? 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' : 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500'}`}>
+              {status?.service_active ? 'Active' : 'Inactive'}
+            </span>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Auto Start</div>
+            <span className={`px-3 py-1 rounded text-xs font-medium ${status?.service_enabled ? 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
+              {status?.service_enabled ? 'Enabled' : 'Disabled'}
+            </span>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button onClick={() => act(status?.connected ? 'disconnect' : 'connect', status?.connected ? vpnDisconnect : vpnConnect)} disabled={al !== null} style={btn(status?.connected ? '#FF003C' : '#00FF88')}>
-            {status?.connected ? <Square size={16} /> : <Play size={16} />} {status?.connected ? 'Disconnect' : 'Connect'}
+        <div className="flex gap-3">
+          <button onClick={() => act(status?.connected ? 'disconnect' : 'connect', status?.connected ? vpnDisconnect : vpnConnect)} disabled={al !== null}
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer border-none transition-all hover:brightness-110 disabled:opacity-50 ${
+              status?.connected ? 'bg-error-500 text-white' : 'bg-success-500 text-white'
+            }`}>
+            {status?.connected ? <Square size={16} /> : <Play size={16} />}
+            {status?.connected ? 'Disconnect' : 'Connect'}
           </button>
-          <button onClick={() => act('refresh', fetch)} disabled={al !== null} style={btn('#1F1F2C')}><RefreshCw size={16} /> Refresh</button>
+          <button onClick={() => act('refresh', fetch)} disabled={al !== null}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm cursor-pointer bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"><RefreshCw size={16} /> Refresh</button>
         </div>
       </div>
 
-      <div style={box}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <Settings color="#FCE205" size={20} />
-          <h3 style={{ color: '#E0E0FF', fontSize: 15, margin: 0 }}>VPN Config</h3>
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-6">
+        <div className="flex items-center gap-2.5 mb-5">
+          <Settings className="text-warning-500" size={20} />
+          <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">VPN Config</h3>
         </div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <div style={{ flex: 1 }}><label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>SERVER</label><input value={s} onChange={e => setS(e.target.value)} style={input} /></div>
-          <div style={{ flex: 1 }}><label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>USERNAME</label><input value={u} onChange={e => setU(e.target.value)} style={input} /></div>
+        <div className="grid grid-cols-2 gap-4">
+          <div><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">SERVER</label><input value={s} onChange={e => setS(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" /></div>
+          <div><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">USERNAME</label><input value={u} onChange={e => setU(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" /></div>
+          <div><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">PASSWORD</label><input type="password" value={pw} onChange={e => setPw(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" placeholder="Kosongkan jika tidak diganti" /></div>
+          <div><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">AUTO START</label><select value={auto} onChange={e => setAuto(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
         </div>
-        <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-          <div style={{ flex: 1 }}><label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>PASSWORD</label><input type="password" value={pw} onChange={e => setPw(e.target.value)} style={input} placeholder="Kosongkan jika tidak diganti" /></div>
-          <div style={{ flex: 1 }}><label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>AUTO START</label><select value={auto} onChange={e => setAuto(e.target.value)} style={{ ...input, marginBottom: 0 }}><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
-        </div>
-        <button onClick={saveConfig} disabled={al !== null} style={{ ...btn('#00F0FF'), marginTop: 16 }}><Save size={16} /> Save</button>
+        <button onClick={saveConfig} disabled={al !== null}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none mt-4 cursor-pointer disabled:opacity-50"><Save size={16} /> Save</button>
       </div>
     </div>
   );
 }
-
-// ══════════════════ TELEGRAM TAB ═════════════════════
 
 function TelegramTab({ toast }: { toast: any }) {
   const [botToken, setBotToken] = useState('');
@@ -298,12 +290,7 @@ function TelegramTab({ toast }: { toast: any }) {
 
   const fetch = async () => {
     setLoading(true);
-    try {
-      const d = await getTelegramConfig();
-      setBotToken('');
-      setChatId('');
-      setEnabled(d.enabled || false);
-    } catch {}
+    try { const d = await getTelegramConfig(); setBotToken(''); setChatId(''); setEnabled(d.enabled || false); } catch {}
     setLoading(false);
   };
   useEffect(() => { fetch(); }, []);
@@ -314,90 +301,60 @@ function TelegramTab({ toast }: { toast: any }) {
       const data: Record<string, string | boolean> = { enabled };
       if (botToken) data.bot_token = botToken;
       if (chatId) data.chat_id = chatId;
-      await setTelegramConfig(data);
-      toast('success', 'Telegram config saved');
-      setBotToken('');
-      setChatId('');
+      await setTelegramConfig(data); toast('success', 'Telegram config saved');
+      setBotToken(''); setChatId('');
     } catch (e: any) { toast('error', e.response?.data?.message || 'Gagal simpan'); }
     setSaving(false);
   };
 
   const handleTest = async () => {
     setTesting(true);
-    try {
-      const r = await testTelegram();
-      toast('success', r.message || 'Test message sent!');
-    } catch (e: any) { toast('error', e.response?.data?.message || 'Gagal kirim test'); }
+    try { const r = await testTelegram(); toast('success', r.message || 'Test message sent!'); }
+    catch (e: any) { toast('error', e.response?.data?.message || 'Gagal kirim test'); }
     setTesting(false);
   };
 
-  const box = { background: '#13131A', borderRadius: 12, padding: 24, border: '1px solid #2A2A3C', marginBottom: 20 };
-  const input = { width: '100%', padding: '10px 14px', borderRadius: 8, background: '#09090E', border: '1px solid #2A2A3C', color: '#E0E0FF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' };
-  const btn = (c: string) => ({ display: 'flex', alignItems: 'center' as const, gap: 8, padding: '8px 18px', borderRadius: 8, fontWeight: 'bold' as const, fontSize: 13, cursor: 'pointer', background: c, color: c === '#1F1F2C' ? '#E0E0FF' : '#09090E', border: c === '#1F1F2C' ? '1px solid #2A2A3C' : 'none' });
-
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#6B6B80' }}>Loading...</div>;
+  if (loading) return <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">Loading...</div>;
 
   return (
-    <div>
-      <div style={box}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <MessageCircle color="#0088CC" size={20} />
-          <h3 style={{ color: '#E0E0FF', fontSize: 15, margin: 0 }}>Telegram Bot</h3>
-          <span style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 4, fontSize: 12, background: enabled ? '#00FF8820' : '#6B6B8020', color: enabled ? '#00FF88' : '#6B6B80' }}>{enabled ? 'Enabled' : 'Disabled'}</span>
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>BOT TOKEN</label>
-          <input value={botToken} onChange={e => setBotToken(e.target.value)} style={input} placeholder="Kosongkan jika tidak diganti" type="password" />
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>CHAT ID</label>
-          <input value={chatId} onChange={e => setChatId(e.target.value)} style={input} placeholder="Kosongkan jika tidak diganti" />
-        </div>
-
-        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <label style={{ color: '#6B6B80', fontSize: 12 }}>ENABLED</label>
-          <button onClick={() => setEnabled(!enabled)}
-            style={{ padding: '6px 16px', borderRadius: 6, fontSize: 12, cursor: 'pointer', border: 'none', background: enabled ? '#00FF88' : '#6B6B80', color: '#09090E' }}>
-            {enabled ? 'ON' : 'OFF'}
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button onClick={handleSave} disabled={saving} style={{ ...btn('#00F0FF') }}><Save size={16} /> {saving ? 'Saving...' : 'Save'}</button>
-          <button onClick={handleTest} disabled={testing} style={{ ...btn('#1F1F2C') }}><Send size={16} /> {testing ? 'Sending...' : 'Test'}</button>
-        </div>
+    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-6">
+      <div className="flex items-center gap-2.5 mb-5">
+        <MessageCircle size={20} className="text-brand-500" />
+        <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">Telegram Bot</h3>
+        <span className={`ml-auto px-3 py-1 rounded text-xs font-medium ${enabled ? 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
+          {enabled ? 'Enabled' : 'Disabled'}
+        </span>
+      </div>
+      <div className="mb-4"><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">BOT TOKEN</label><input value={botToken} onChange={e => setBotToken(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" placeholder="Kosongkan jika tidak diganti" type="password" /></div>
+      <div className="mb-4"><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">CHAT ID</label><input value={chatId} onChange={e => setChatId(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" placeholder="Kosongkan jika tidak diganti" /></div>
+      <div className="mb-5 flex items-center gap-3">
+        <label className="text-sm text-gray-500 dark:text-gray-400">ENABLED</label>
+        <button onClick={() => setEnabled(!enabled)}
+          className={`px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer border-none transition-all ${
+            enabled ? 'bg-success-500 text-white' : 'bg-gray-300 dark:bg-gray-600 text-white'
+          }`}>{enabled ? 'ON' : 'OFF'}</button>
+      </div>
+      <div className="flex gap-3">
+        <button onClick={handleSave} disabled={saving}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer disabled:opacity-50"><Save size={16} /> {saving ? 'Saving...' : 'Save'}</button>
+        <button onClick={handleTest} disabled={testing}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-transparent cursor-pointer disabled:opacity-50"><Send size={16} /> {testing ? 'Sending...' : 'Test'}</button>
       </div>
     </div>
   );
 }
-
-// ══════════════════ AI KEYS TAB ═════════════════════
 
 function AiKeysTab({ toast }: { toast: any }) {
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const AI_KEY_LABELS: Record<string, string> = {
-    gemini: 'Google Gemini',
-    openrouter: 'OpenRouter',
-    openai: 'OpenAI',
-  };
-
-  const AI_KEY_HELP: Record<string, string> = {
-    gemini: 'https://aistudio.google.com/app/apikey',
-    openrouter: 'https://openrouter.ai/keys',
-    openai: 'https://platform.openai.com/api-keys',
-  };
+  const AI_KEY_LABELS: Record<string, string> = { gemini: 'Google Gemini', openrouter: 'OpenRouter', openai: 'OpenAI' };
+  const AI_KEY_HELP: Record<string, string> = { gemini: 'https://aistudio.google.com/app/apikey', openrouter: 'https://openrouter.ai/keys', openai: 'https://platform.openai.com/api-keys' };
 
   const fetch = async () => {
     setLoading(true);
-    try {
-      const d = await getAiKeys();
-      setKeys(d.keys || {});
-    } catch {}
+    try { const d = await getAiKeys(); setKeys(d.keys || {}); } catch {}
     setLoading(false);
   };
   useEffect(() => { fetch(); }, []);
@@ -406,58 +363,35 @@ function AiKeysTab({ toast }: { toast: any }) {
     setSaving(true);
     try {
       const data: Record<string, string> = {};
-      for (const k of Object.keys(keys)) {
-        if (keys[k]) data[k] = keys[k];
-      }
-      await setAiKeys(data);
-      toast('success', 'AI keys saved');
-      fetch();
-    } catch (e: any) { toast('error', 'Gagal simpan'); }
+      for (const k of Object.keys(keys)) { if (keys[k]) data[k] = keys[k]; }
+      await setAiKeys(data); toast('success', 'AI keys saved'); fetch();
+    } catch { toast('error', 'Gagal simpan'); }
     setSaving(false);
   };
 
-  const box = { background: '#13131A', borderRadius: 12, padding: 24, border: '1px solid #2A2A3C', marginBottom: 20 };
-  const input = { width: '100%', padding: '10px 14px', borderRadius: 8, background: '#09090E', border: '1px solid #2A2A3C', color: '#E0E0FF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' };
-  const btn = (c: string) => ({ display: 'flex', alignItems: 'center' as const, gap: 8, padding: '8px 18px', borderRadius: 8, fontWeight: 'bold' as const, fontSize: 13, cursor: 'pointer', background: c, color: c === '#1F1F2C' ? '#E0E0FF' : '#09090E', border: c === '#1F1F2C' ? '1px solid #2A2A3C' : 'none' });
-
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#6B6B80' }}>Loading...</div>;
+  if (loading) return <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">Loading...</div>;
 
   return (
-    <div>
-      <div style={box}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <Key color="#00F0FF" size={20} />
-          <h3 style={{ color: '#E0E0FF', fontSize: 15, margin: 0 }}>AI API Keys</h3>
-        </div>
-
-        {Object.keys(AI_KEY_LABELS).map(name => (
-          <div key={name} style={{ marginBottom: 16 }}>
-            <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>
-              {AI_KEY_LABELS[name]}
-              <a href={AI_KEY_HELP[name]} target="_blank" rel="noopener noreferrer"
-                style={{ marginLeft: 8, color: '#00F0FF', fontSize: 11, textDecoration: 'none' }}>
-                (get key)
-              </a>
-            </label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="password"
-                value={keys[name] || ''}
-                onChange={e => setKeys(prev => ({ ...prev, [name]: e.target.value }))}
-                style={{ ...input, flex: 1, marginBottom: 0 }}
-                placeholder="********"
-              />
-            </div>
-          </div>
-        ))}
-
-        <button onClick={handleSave} disabled={saving} style={{ ...btn('#00F0FF') }}><Save size={16} /> {saving ? 'Saving...' : 'Save All'}</button>
+    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-6">
+      <div className="flex items-center gap-2.5 mb-5">
+        <Key className="text-brand-500" size={20} />
+        <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">AI API Keys</h3>
       </div>
+      {Object.keys(AI_KEY_LABELS).map(name => (
+        <div key={name} className="mb-4">
+          <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
+            {AI_KEY_LABELS[name]}
+            <a href={AI_KEY_HELP[name]} target="_blank" rel="noopener noreferrer" className="ml-2 text-brand-600 dark:text-brand-400 text-xs no-underline hover:underline">(get key)</a>
+          </label>
+          <input type="password" value={keys[name] || ''} onChange={e => setKeys(prev => ({ ...prev, [name]: e.target.value }))}
+            className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" placeholder="********" />
+        </div>
+      ))}
+      <button onClick={handleSave} disabled={saving}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer disabled:opacity-50"><Save size={16} /> {saving ? 'Saving...' : 'Save All'}</button>
     </div>
   );
 }
-
-// ══════════════════ CONFIG TAB ═══════════════════════
 
 function ConfigTab({ toast }: { toast: any }) {
   const [cfg, setCfg] = useState<Record<string, string>>({});
@@ -467,86 +401,71 @@ function ConfigTab({ toast }: { toast: any }) {
   const [targetDir, setTargetDir] = useState('');
 
   useEffect(() => {
-    getConfig().then(d => {
-      setCfg(d.config);
-      if (d.config?.TARGET_DIR) setTargetDir(d.config.TARGET_DIR);
-    }).catch(() => {});
+    getConfig().then(d => { setCfg(d.config); if (d.config?.TARGET_DIR) setTargetDir(d.config.TARGET_DIR); }).catch(() => {});
   }, []);
 
   const handleSave = async (key: string) => {
-    try {
-      await updateConfig(key, editVal);
-      setCfg(prev => ({ ...prev, [key]: editVal }));
-      setEditKey(null);
-      toast('success', 'Config updated');
-    } catch { toast('error', 'Gagal update'); }
+    try { await updateConfig(key, editVal); setCfg(prev => ({ ...prev, [key]: editVal })); setEditKey(null); toast('success', 'Config updated'); }
+    catch { toast('error', 'Gagal update'); }
   };
 
   const handleDirSelected = (_files: string[], folder: string) => {
     setShowDirPicker(false);
-    if (folder) {
-      updateStoragePath(folder);
-      setTargetDir(folder);
-      setCfg(prev => ({ ...prev, TARGET_DIR: folder }));
-      toast('success', 'Target directory updated');
-    }
+    if (folder) { updateStoragePath(folder); setTargetDir(folder); setCfg(prev => ({ ...prev, TARGET_DIR: folder })); toast('success', 'Target directory updated'); }
   };
 
-  const box = { background: '#13131A', borderRadius: 12, border: '1px solid #2A2A3C', padding: 20, marginBottom: 20 };
-
   return (
-    <div>
-      {/* Target Directory */}
-      <div style={box}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-          <Folder size={20} color="#FCE205" />
-          <h3 style={{ color: '#E0E0FF', fontSize: 15, margin: 0 }}>Target Directory</h3>
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Folder size={20} className="text-warning-500" />
+          <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">Target Directory</h3>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <code style={{ flex: 1, color: '#E0E0FF', fontSize: 13, fontFamily: 'monospace', padding: '10px 14px', borderRadius: 8, background: '#09090E', border: '1px solid #2A2A3C' }}>
+        <div className="flex items-center gap-3">
+          <code className="flex-1 text-sm text-gray-800 dark:text-white/90 font-mono px-3.5 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
             {targetDir || 'Not set'}
           </code>
           <button onClick={() => setShowDirPicker(true)}
-            style={{ padding: '8px 18px', borderRadius: 8, background: '#00F0FF', color: '#09090E', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: 13 }}>
-            Browse
-          </button>
+            className="px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer">Browse</button>
         </div>
       </div>
 
       {showDirPicker && (
-        <FileBrowser
-          title="Pilih Target Directory"
-          onSelect={handleDirSelected}
-          onCancel={() => setShowDirPicker(false)}
-          folderPicker
-        />
+        <FileBrowser title="Pilih Target Directory" onSelect={handleDirSelected} onCancel={() => setShowDirPicker(false)} folderPicker />
       )}
 
-      {/* Config List */}
-      <div style={box}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <Settings color="#00F0FF" size={20} />
-          <h3 style={{ color: '#E0E0FF', fontSize: 15, margin: 0 }}>All Config</h3>
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+        <div className="flex items-center gap-2.5 mb-4">
+          <Settings className="text-brand-500" size={20} />
+          <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">All Config</h3>
         </div>
         {Object.keys(cfg).length === 0 ? (
-          <div style={{ padding: 20, textAlign: 'center', color: '#6B6B80' }}>Belum ada konfigurasi.</div>
-        ) : Object.entries(cfg).map(([key, value]) => (
-          <div key={key} style={{ display: 'flex', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #1F1F2C', gap: 12 }}>
-            <code style={{ color: '#00F0FF', fontSize: 13, minWidth: 200, fontFamily: 'monospace' }}>{key}</code>
-            {editKey === key ? (
-              <>
-                <input value={editVal} onChange={e => setEditVal(e.target.value)} style={{ flex: 1, padding: '6px 10px', borderRadius: 4, background: '#09090E', border: '1px solid #00F0FF', color: '#E0E0FF', fontSize: 13, outline: 'none' }} />
-                <button onClick={() => handleSave(key)} style={{ padding: '6px 12px', background: '#00F0FF', color: '#09090E', border: 'none', borderRadius: 4, cursor: 'pointer' }}><Save size={14} /></button>
-                <button onClick={() => setEditKey(null)} style={{ padding: '6px 12px', background: '#1F1F2C', color: '#6B6B80', border: '1px solid #2A2A3C', borderRadius: 4, cursor: 'pointer' }}>Cancel</button>
-              </>
-            ) : (
-              <>
-                <span style={{ flex: 1, color: '#E0E0FF', fontSize: 13, fontFamily: 'monospace' }}>{value}</span>
-                <button onClick={() => { setEditKey(key); setEditVal(value); }} style={{ padding: '4px 10px', background: '#1F1F2C', color: '#6B6B80', border: '1px solid #2A2A3C', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Edit</button>
-              </>
-            )}
+          <div className="py-5 text-center text-sm text-gray-500 dark:text-gray-400">Belum ada konfigurasi.</div>
+        ) : (
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+            {Object.entries(cfg).map(([key, value]) => (
+              <div key={key} className="flex items-center py-3 gap-3">
+                <code className="text-sm text-brand-600 dark:text-brand-400 min-w-[200px] font-mono">{key}</code>
+                {editKey === key ? (
+                  <>
+                    <input value={editVal} onChange={e => setEditVal(e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 rounded bg-gray-50 dark:bg-gray-800 border border-brand-300 dark:border-brand-700 text-gray-800 dark:text-white/90 text-sm outline-none box-border" />
+                    <button onClick={() => handleSave(key)}
+                      className="p-1.5 rounded bg-brand-500 text-white border-none cursor-pointer hover:bg-brand-600 transition-colors"><Save size={14} /></button>
+                    <button onClick={() => setEditKey(null)}
+                      className="px-3 py-1.5 rounded border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-xs hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-sm text-gray-800 dark:text-white/90 font-mono">{value}</span>
+                    <button onClick={() => { setEditKey(key); setEditVal(value); }}
+                      className="px-2.5 py-1 rounded border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-xs hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Edit</button>
+                  </>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );

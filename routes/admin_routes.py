@@ -1,8 +1,13 @@
 from flask import Blueprint, request, jsonify, g
 import os
+import shutil
 import subprocess
 import hashlib
 import logging
+import importlib.util
+import signal
+import sys
+import time
 from werkzeug.security import generate_password_hash
 
 from auth import requires_admin
@@ -528,7 +533,7 @@ def vpn_set_config():
 # === SERVICE MANAGEMENT ===
 
 ZDT_SERVICES = [
-    'zdt-api', 'zdt-web', 'zdt-scheduler', 'zdt-telegram'
+    'zdt-api', 'zdt-web', 'zdt-scheduler', 'zdt-telegram', 'zdt-watch'
 ]
 
 @admin_bp.route('/api/admin/services', methods=['GET'])
@@ -538,24 +543,34 @@ def list_services():
         services = []
         for name in ZDT_SERVICES:
             unit = name + '.service'
-            try:
-                active = subprocess.run(['sudo', 'systemctl', 'is-active', unit],
+            active_res = subprocess.run(['sudo', 'systemctl', 'is-active', unit],
                                         capture_output=True, text=True, timeout=5)
-                enabled = subprocess.run(['sudo', 'systemctl', 'is-enabled', unit],
+            enabled_res = subprocess.run(['sudo', 'systemctl', 'is-enabled', unit],
                                          capture_output=True, text=True, timeout=5)
-                services.append({
-                    'name': name,
-                    'active': active.stdout.strip(),
-                    'enabled': enabled.stdout.strip(),
-                })
-            except Exception:
-                pg_name = name.replace('zdt-', '')
-                pg = subprocess.run(['pgrep', '-f', pg_name],
+            if active_res.returncode != 0 or enabled_res.returncode != 0:
+                scripts_map = {
+                    'zdt-watch': 'zdt-watch.py',
+                    'zdt-telegram': 'zdt-telegram.py',
+                    'zdt-scheduler': 'zdt-scheduler.py',
+                    'zdt-web': 'zdt-web.py',
+                    'zdt-api': 'server.py',
+                }
+                script = scripts_map.get(name, f'{name}.py')
+                pg = subprocess.run(['pgrep', '-f', script],
                                     capture_output=True, text=True, timeout=3)
+                enabled = 'unknown'
+                if name == 'zdt-watch':
+                    enabled = 'enabled' if config.get('WATCH_AUTOSTART') == 'true' else 'disabled'
                 services.append({
                     'name': name,
                     'active': 'active' if pg.returncode == 0 else 'inactive',
-                    'enabled': 'unknown',
+                    'enabled': enabled,
+                })
+            else:
+                services.append({
+                    'name': name,
+                    'active': active_res.stdout.strip(),
+                    'enabled': enabled_res.stdout.strip(),
                 })
         return jsonify({'services': services})
     except Exception as e:
@@ -571,6 +586,29 @@ def shutdown_server():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+def _is_process_running(script_name):
+    try:
+        r = subprocess.run(['pgrep', '-f', script_name], capture_output=True, text=True, timeout=5)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+def _kill_process(script_name):
+    try:
+        r = subprocess.run(['pgrep', '-f', script_name], capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            for pid in r.stdout.strip().split('\n'):
+                if pid:
+                    try: os.kill(int(pid), signal.SIGTERM)
+                    except: pass
+            time.sleep(1)
+            for pid in r.stdout.strip().split('\n'):
+                if pid:
+                    try: os.kill(int(pid), signal.SIGKILL)
+                    except: pass
+    except Exception:
+        pass
 
 @admin_bp.route('/api/admin/services/<name>/<action>', methods=['POST'])
 @requires_admin
@@ -592,9 +630,155 @@ def manage_service(name, action):
         result = subprocess.run(['sudo', 'systemctl', action, unit],
                                 capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
+            if name == 'zdt-watch':
+                if action in ('start', 'stop', 'restart'):
+                    script = 'zdt-watch.py'
+                    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    script_path = os.path.join(base, script)
+                    if action == 'restart':
+                        _kill_process(script)
+                        time.sleep(1)
+                    if action in ('start', 'restart'):
+                        if _is_process_running(script):
+                            return jsonify({'success': True, 'message': f'{name} already running'})
+                        if not os.path.exists(script_path):
+                            return jsonify({'error': f'Script not found: {script_path}'}), 404
+                        python = shutil.which('python3') or 'python3'
+                        subprocess.Popen([python, script_path], start_new_session=True, close_fds=True)
+                        msg = f'{name} started (daemon)'
+                    else:
+                        _kill_process(script)
+                        msg = f'{name} stopped (daemon)'
+                    return jsonify({'success': True, 'message': msg})
+                elif action == 'enable':
+                    config.update_config('WATCH_AUTOSTART', 'true')
+                    return jsonify({'success': True, 'message': 'Watch auto-start enabled (config)'})
+                elif action == 'disable':
+                    config.update_config('WATCH_AUTOSTART', 'false')
+                    return jsonify({'success': True, 'message': 'Watch auto-start disabled (config)'})
+                else:
+                    return jsonify({'error': f'Unknown action: {action}'}), 400
             return jsonify({'error': result.stderr.strip() or f'Gagal {action} {name}'}), 500
 
         msg = f'{name} {action} berhasil'
         return jsonify({'success': True, 'message': msg})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# === DEPENDENCY MANAGEMENT ===
+
+_ZDT_VENV_DIR = os.path.expanduser('~/.local/share/zdt/venv')
+_ZDT_DEMUCS_BIN = os.path.expanduser('~/.local/share/zdt/demucs_venv/bin/demucs')
+
+def _check_binary(name):
+    path = shutil.which(name)
+    if not path:
+        return {'name': name, 'type': 'binary', 'installed': False, 'version': None}
+    try:
+        ver = subprocess.run([name, '--version'], capture_output=True, text=True, timeout=10)
+        v = ver.stdout.strip().split('\n')[0] or ver.stderr.strip().split('\n')[0]
+        return {'name': name, 'type': 'binary', 'installed': True, 'version': v or 'ok', 'path': path}
+    except Exception:
+        return {'name': name, 'type': 'binary', 'installed': True, 'version': 'ok', 'path': path}
+
+def _check_pip_module(name, venv_dir=None):
+    spec = importlib.util.find_spec(name)
+    if spec:
+        r = subprocess.run([sys.executable, '-c', f'import {name}'],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode == 0:
+            return {'name': name, 'type': 'pip', 'installed': True, 'version': 'ok', 'path': spec.origin}
+    if venv_dir:
+        py = os.path.join(venv_dir, 'bin', 'python')
+        if os.path.isfile(py):
+            r = subprocess.run([py, '-c', f'import {name}'],
+                               capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                v = subprocess.run([py, '-c', f'import {name}; v=getattr({name}, "__version__", None); print(v or "ok")'],
+                                   capture_output=True, text=True, timeout=10)
+                version = v.stdout.strip() if v.returncode == 0 else 'ok'
+                return {'name': name, 'type': 'pip', 'installed': True, 'version': version or 'ok'}
+    return {'name': name, 'type': 'pip', 'installed': False, 'version': None}
+
+def _check_pip_binary(name, venv_dir):
+    bin_path = os.path.join(venv_dir, 'bin', name)
+    if os.path.isfile(bin_path):
+        try:
+            r = subprocess.run([bin_path, '--version'], capture_output=True, text=True, timeout=10)
+            v = r.stdout.strip().split('\n')[0] or r.stderr.strip().split('\n')[0]
+            return {'name': name, 'type': 'pip', 'installed': True, 'version': v or 'ok', 'path': bin_path}
+        except Exception:
+            return {'name': name, 'type': 'pip', 'installed': True, 'version': 'ok', 'path': bin_path}
+    return None
+
+@admin_bp.route('/api/admin/dependencies', methods=['GET'])
+@requires_admin
+def check_dependencies():
+    deps = []
+    deps.append({'_key': 'python3', '_label': 'Python 3', '_group': 'core',
+                 **(_check_binary('python3') or _check_binary('python') or {'installed': False})})
+    deps.append({'_key': 'ffmpeg', '_label': 'FFmpeg', '_group': 'system',
+                 **(_check_binary('ffmpeg') or {'installed': False})})
+    deps.append({'_key': 'nodejs', '_label': 'Node.js', '_group': 'system',
+                 **(_check_binary('nodejs') or _check_binary('node') or {'installed': False})})
+    deps.append({'_key': 'npm', '_label': 'npm', '_group': 'system',
+                 **(_check_binary('npm') or {'installed': False})})
+
+    for mod in [('flask', None), ('gunicorn', None), ('syncedlyrics', None), ('mutagen', None),
+                ('watchdog', None), ('pyTelegramBotAPI', 'telebot')]:
+        name, import_as = mod[0], mod[1] or mod[0]
+        deps.append({'_key': name, '_label': name, '_group': 'pip',
+                     **(_check_pip_module(import_as, _ZDT_VENV_DIR) or {'installed': False})})
+
+    for bin_name in ['yt-dlp', 'spotdl']:
+        r = _check_pip_binary(bin_name, _ZDT_VENV_DIR)
+        if r:
+            r['_key'] = bin_name
+            r['_label'] = bin_name
+            r['_group'] = 'tool'
+            deps.append(r)
+        else:
+            deps.append({'_key': bin_name, '_label': bin_name, '_group': 'tool',
+                         **(_check_pip_module(bin_name) or {'installed': False})})
+
+    demucs_path = _ZDT_DEMUCS_BIN
+    if os.path.isfile(demucs_path):
+        try:
+            r = subprocess.run([demucs_path, '--version'], capture_output=True, text=True, timeout=15)
+            v = r.stdout.strip() or r.stderr.strip() or 'ok'
+            deps.append({'_key': 'demucs', '_label': 'Demucs (AI)', '_group': 'tool',
+                         'installed': True, 'version': v, 'path': demucs_path})
+        except Exception:
+            deps.append({'_key': 'demucs', '_label': 'Demucs (AI)', '_group': 'tool',
+                         'installed': True, 'version': 'ok', 'path': demucs_path})
+    else:
+        deps.append({'_key': 'demucs', '_label': 'Demucs (AI)', '_group': 'tool',
+                     'installed': False, 'version': None})
+
+    return jsonify({'dependencies': deps})
+
+
+@admin_bp.route('/api/admin/dependencies/install', methods=['POST'])
+@requires_admin
+def install_dependencies():
+    setup_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'zdt-modules', 'setup.sh')
+    setup_script = os.path.abspath(setup_script)
+    if not os.path.isfile(setup_script):
+        return jsonify({'error': 'setup.sh tidak ditemukan'}), 500
+
+    try:
+        result = subprocess.run(
+            ['bash', setup_script, '--install-missing'],
+            capture_output=True, text=True, timeout=600
+        )
+        return jsonify({
+            'success': result.returncode == 0,
+            'message': 'Instalasi selesai' if result.returncode == 0 else 'Instalasi gagal',
+            'stdout': result.stdout[-2000:],
+            'stderr': result.stderr[-2000:]
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Instalasi timeout (>10 menit)'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500

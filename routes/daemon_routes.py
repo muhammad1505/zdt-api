@@ -314,7 +314,7 @@ def server_tools():
                     cmd = ['ffmpeg', '-i', file_path, '-vcodec', 'libx264', '-crf', '28', output]
                 else:
                     cmd = ['ffmpeg', '-i', file_path, '-b:a', '128k', output]
-                with open(log_path, 'a') as log_file:
+                with open(log_path, 'w') as log_file:
                     subprocess.Popen(
                         cmd,
                         stdout=log_file,
@@ -323,9 +323,6 @@ def server_tools():
                     )
 
             if filename:
-                full_path = os.path.join(work_dir, filename)
-                from werkzeug.utils import secure_filename
-                filename = secure_filename(filename)
                 full_path = os.path.join(work_dir, filename)
                 real_target = os.path.realpath(work_dir)
                 real_file = os.path.realpath(full_path)
@@ -349,12 +346,19 @@ def server_tools():
 
             def do_demucs(file_path: str):
                 name_no_ext = os.path.splitext(os.path.basename(file_path))[0]
+                ext = os.path.splitext(file_path)[1].lower()
                 base_dir = os.path.dirname(file_path)
-                sep_dir = os.path.join(base_dir, 'separated')
                 shell_cmd = (
-                    f'"{demucs_bin}" --two-stems=vocals -o "{base_dir}" "{file_path}" && '
-                    f'outdir=$(find "{sep_dir}" -maxdepth 3 -type d -name "{name_no_ext}" 2>/dev/null | head -1); '
-                    f'if [ ! -d "$outdir" ]; then outdir="{sep_dir}/htdemucs/{name_no_ext}"; fi; '
+                    f'ext="{ext}"; '
+                    f'ffmpeg_opts="-b:a 192k"; '
+                    f'case "$ext" in .m4a) ffmpeg_opts="-c:a aac -b:a 192k";; '
+                    f'.flac) ffmpeg_opts="-c:a flac";; '
+                    f'.ogg) ffmpeg_opts="-c:a libvorbis -q:a 3";; '
+                    f'.opus) ffmpeg_opts="-c:a libopus -b:a 128k";; '
+                    f'.wav) ffmpeg_opts="-c:a pcm_s16le";; esac; '
+                    f'"{demucs_bin}" --two-stems=vocals -o "{base_dir}" "{file_path}" 2>&1 && '
+                    f'outdir=$(find "{base_dir}" -maxdepth 4 -type d -name "{name_no_ext}" 2>/dev/null | head -1); '
+                    f'if [ ! -d "$outdir" ]; then outdir="{base_dir}/htdemucs/{name_no_ext}"; fi; '
                     f'if [ -d "$outdir" ]; then '
                     f'for f in "$outdir"/*.wav; do '
                     f'bn=$(basename "$f" .wav); '
@@ -362,12 +366,12 @@ def server_tools():
                     f'vocals) stems="vokal";; '
                     f'no_vocals) stems="novokal";; '
                     f'*) stems="$bn";; esac; '
-                    f'ffmpeg -y -i "$f" -b:a 192k "{base_dir}/${name_no_ext}_{stems}.mp3" -loglevel error && rm "$f"; '
+                    f'ffmpeg -y -i "$f" $ffmpeg_opts "{base_dir}/${name_no_ext}_${{stems}}{ext}" -loglevel error && rm "$f"; '
                     f'done; rmdir "$outdir" 2>/dev/null; fi && '
-                    f'rm -rf "{sep_dir}" 2>/dev/null; '
-                    f'echo "Done: {name_no_ext}_vokal.mp3 + {name_no_ext}_novokal.mp3"'
+                    f'rm -rf "{base_dir}/htdemucs" 2>/dev/null; '
+                    f'echo "Done: {name_no_ext}_vokal{ext} + {name_no_ext}_novokal{ext}"'
                 )
-                with open(log_path, 'a') as log_file:
+                with open(log_path, 'w') as log_file:
                     subprocess.Popen(
                         ['bash', '-c', shell_cmd],
                         stdout=log_file, stderr=subprocess.STDOUT,
@@ -375,9 +379,6 @@ def server_tools():
                     )
 
             if filename:
-                full_path = os.path.join(work_dir, filename)
-                from werkzeug.utils import secure_filename
-                filename = secure_filename(filename)
                 full_path = os.path.join(work_dir, filename)
                 real_target = os.path.realpath(work_dir)
                 real_file = os.path.realpath(full_path)

@@ -37,6 +37,15 @@ export interface DashboardData {
   ips: string[];
 }
 
+export interface DependencyInfo {
+  _key: string;
+  _label: string;
+  _group: string;
+  installed: boolean;
+  version: string | null;
+  path?: string;
+}
+
 export interface KeyGenerateResponse {
   success: boolean;
   smart_key: string;

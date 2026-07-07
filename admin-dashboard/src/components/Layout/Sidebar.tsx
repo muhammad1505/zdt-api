@@ -1,10 +1,12 @@
-import { NavLink } from 'react-router-dom';
+import { useCallback } from 'react';
+import { NavLink, Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Key, Users, ScrollText, Folder,
-  LogOut, Server, Wrench, Sliders
+  LayoutDashboard, Folder, Key, Users, Wrench, Sliders, ScrollText,
+  Server, Menu, X
 } from 'lucide-react';
+import { useSidebar } from '../../context/SidebarContext';
 
-const navItems = [
+const mainItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/files', icon: Folder, label: 'Files' },
   { to: '/keys', icon: Key, label: 'API Keys' },
@@ -14,65 +16,82 @@ const navItems = [
   { to: '/logs', icon: ScrollText, label: 'Logs' },
 ];
 
-interface Props {
-  username: string;
-  onLogout: () => void;
-}
+export default function Sidebar() {
+  const { isExpanded, isMobileOpen, isHovered, toggleMobileSidebar, setIsHovered } = useSidebar();
+  const location = useLocation();
+  const isActive = useCallback((path: string) => location.pathname === path, [location.pathname]);
 
-export default function Sidebar({ username, onLogout }: Props) {
+  const sidebarWidth = isExpanded || isHovered || isMobileOpen ? 'w-[290px]' : 'w-[90px]';
+
   return (
-    <aside style={{
-      width: 240, height: '100vh', background: '#13131A',
-      borderRight: '1px solid #2A2A3C', display: 'flex',
-      flexDirection: 'column', position: 'fixed', left: 0, top: 0
-    }}>
-      <div style={{ padding: '24px 20px', borderBottom: '1px solid #2A2A3C' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Server color="#00F0FF" size={24} />
-          <div>
-            <div style={{ color: '#00F0FF', fontWeight: 'bold', fontSize: 16 }}>ZDT API</div>
-            <div style={{ color: '#6B6B80', fontSize: 11 }}>Admin Dashboard</div>
+    <>
+      {/* Mobile toggle */}
+      <button
+        onClick={toggleMobileSidebar}
+        className="lg:hidden fixed top-3 left-3 z-[99999] p-2 rounded-lg bg-surface border border-border text-primary"
+      >
+        {isMobileOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
+
+      {/* Overlay */}
+      {isMobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 bg-black/50" onClick={toggleMobileSidebar} />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`fixed top-0 left-0 h-screen bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 dark:text-white transition-all duration-300 ease-in-out z-50 border-r border-gray-200 flex flex-col
+          ${sidebarWidth}
+          ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+          ${!isExpanded && !isHovered && !isMobileOpen ? 'lg:w-[90px]' : ''}`}
+        onMouseEnter={() => !isExpanded && setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Logo */}
+        <div className={`py-8 flex ${!isExpanded && !isHovered && !isMobileOpen ? 'lg:justify-center' : 'justify-start'} px-5`}>
+          <Link to="/" className="flex items-center gap-3 no-underline">
+            <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center shrink-0">
+              <Server size={18} className="text-white" />
+            </div>
+            {(isExpanded || isHovered || isMobileOpen) && (
+              <div>
+                <div className="font-bold text-base text-gray-800 dark:text-white/90">ZDT API</div>
+                <div className="text-[11px] text-gray-500 dark:text-gray-400 -mt-0.5">Admin Dashboard</div>
+              </div>
+            )}
+          </Link>
+        </div>
+
+        {/* Nav */}
+        <div className="flex-1 overflow-y-auto no-scrollbar px-4">
+          <div className="mb-4">
+            <h2 className={`mb-3 text-xs uppercase tracking-wide text-gray-400 ${!isExpanded && !isHovered && !isMobileOpen ? 'lg:text-center' : ''}`}>
+              {(isExpanded || isHovered || isMobileOpen) ? 'Menu' : '•••'}
+            </h2>
+            <ul className="flex flex-col gap-1">
+              {mainItems.map(item => (
+                <li key={item.to}>
+                  <NavLink
+                    to={item.to}
+                    end={item.to === '/'}
+                    onClick={() => isMobileOpen && toggleMobileSidebar()}
+                    className={`menu-item group ${isActive(item.to) ? 'menu-item-active' : 'menu-item-inactive'}
+                      ${!isExpanded && !isHovered && !isMobileOpen ? 'lg:justify-center' : 'lg:justify-start'}`}
+                  >
+                    <span className={`menu-item-icon-size ${isActive(item.to) ? 'menu-item-icon-active' : 'menu-item-icon-inactive'}`}>
+                      <item.icon size={22} />
+                    </span>
+                    {(isExpanded || isHovered || isMobileOpen) && (
+                      <span className="menu-item-text">{item.label}</span>
+                    )}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
-      </div>
 
-      <nav style={{ flex: 1, padding: '12px 8px' }}>
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === '/'}
-            style={({ isActive }) => ({
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '10px 14px', borderRadius: 8, marginBottom: 2,
-              textDecoration: 'none', fontSize: 14,
-              color: isActive ? '#00F0FF' : '#6B6B80',
-              background: isActive ? '#1F1F2C' : 'transparent',
-              transition: 'all 0.15s',
-            })}
-          >
-            <item.icon size={18} />
-            {item.label}
-          </NavLink>
-        ))}
-      </nav>
-
-      <div style={{ padding: '12px 8px', borderTop: '1px solid #2A2A3C' }}>
-        <div style={{ padding: '8px 14px', color: '#6B6B80', fontSize: 12 }}>
-          {username}
-        </div>
-        <button
-          onClick={onLogout}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 12, width: '100%',
-            padding: '10px 14px', borderRadius: 8, border: 'none',
-            background: 'transparent', color: '#FF003C', fontSize: 14,
-            cursor: 'pointer'
-          }}
-        >
-          <LogOut size={18} /> Logout
-        </button>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }

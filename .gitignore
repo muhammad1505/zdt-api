@@ -17,6 +17,7 @@ build/
 dist/
 logs/
 .agents/
+tests/test_downloads/
 ORIGINAL_REQUEST.md
 PROJECT.md
 PROJECT_VERSION

@@ -1,0 +1,15 @@
+[Unit]
+Description=ZDT Watch - File System Monitor for Real-Time Uploads
+After=network.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+WorkingDirectory=__ZDT_API_DIR__
+ExecStart=__PYTHON__ __ZDT_API_DIR__/zdt-watch.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

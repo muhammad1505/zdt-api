@@ -635,6 +635,11 @@ _parse_args() {
                 tampilkan_dokumentasi
                 exit 0
                 ;;
+            --install-missing|install-missing)
+                _setup_colors; _setup_unicode; _init_logging; _load_config; _load_storage_dir
+                install_missing_tools
+                exit $?
+                ;;
             --install|install)
                 install_global
                 exit $?

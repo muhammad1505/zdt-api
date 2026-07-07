@@ -40,6 +40,7 @@ def create_app():
         'http://localhost:5173',
         'http://127.0.0.1:2000',
         'http://127.0.0.1:5173',
+        'http://10.104.18.86:2000',
     ]
     # Add any origins from config
     cors_origin = app_config.get('CORS_ORIGIN', '')

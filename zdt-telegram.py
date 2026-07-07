@@ -25,6 +25,8 @@ if _MODULES_DIR not in sys.path:
     sys.path.insert(0, _MODULES_DIR)
 from zdt_paths import ZdtPaths
 
+YT_DLP = shutil.which('yt-dlp') or os.path.expanduser('~/.local/bin/yt-dlp')
+
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 if not TOKEN:
     # Token file: ~/.config/zdt/telegram_token.txt
@@ -70,7 +72,8 @@ import logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    datefmt='%Y-%m-%d %H:%M:%S',
+    force=True
 )
 telebot.logger.setLevel(logging.INFO)
 
@@ -369,50 +372,6 @@ def auto_download_audio(message):
 TELEGRAM COMMANDS: /audio <url>, /video <url>, /status, /ping, /start, /demucs, /kompres.
 Inline buttons: Kompres, Vokal, Bersih Nama, Sync Lirik, Playlist.
 
-AUTO_ACTION (WAJIB jika user suruh eksekusi):
-- Download audio (YouTube/SoundCloud/FB/TikTok/dll): [AUTO_ACTION: gas download audio URL]
-- Download audio dari Spotify: [AUTO_ACTION: gas download audio URL] (auto-detect)
-- Download video: [AUTO_ACTION: gas download video URL]
-- Cari YouTube: [AUTO_ACTION: cari youtube kata_kunci]
-- Pisah vokal: [AUTO_ACTION: hapus vokal]
-- Kompres: [AUTO_ACTION: kompres media]
-- Lirik: [AUTO_ACTION: sync lirik]
-- Bersih nama: [AUTO_ACTION: bersih nama]
-- Playlist: [AUTO_ACTION: bikin playlist]
-- Status: [AUTO_ACTION: cek status]
-- Hapus semua: [AUTO_ACTION: hapus semua]
-
-ATURAN:
-- Jika user minta AKSI → sertakan AUTO_ACTION tag
-- Jika user minta download TANPA URL → isi AUTO_ACTION tetap, query dikosongkan (user bakal diminta link)
-- Jika user tanya/ngobrol → jawab natural TANPA AUTO_ACTION
-- KALO USER SALAM/SAPA → balas ramah lalu TANYA "ada yang bisa dibantu?"
-- JANGAN pakai markdown heading (###), pakai emoji saja
-- Jawab natural dan santai, max 3 kalimat
-- PAHAMI variasi bahasa: "download"/"sedot"/"ambil" semua artinya download; "kompres"/"kecilin"/"compress" semua kompres; "pisah vokal"/"karaoke"/"demucs"/"vocal remover" semua hapus vokal
-
-Contoh:
-User: halo
-Bot: Halo juga! 👋 Ada yang bisa gue bantu? Mau download lagu, atau apa nih?
-
-User: lu bisa apa bro
-Bot: Gue bisa download lagu/video dari YouTube, Spotify, SoundCloud, FB, TikTok, dll! Juga kompres file, pisahin vokal pake AI, sync lirik, bersihin nama file. Ada yang mau dicoba? 😎
-
-User: bisa gak bantu gw download audio?
-Bot: Bisa bang! Mau download dari YouTube, Spotify, SoundCloud, atau kirim link aja? 🎵 [AUTO_ACTION: gas download audio ]
-
-User: download tulus
-Bot: Gas download Tulus! 🎵 [AUTO_ACTION: gas download audio ytsearch1:Tulus]
-
-User: tolong sedot video dari fb
-Bot: Oke, kirim link videonya bro! 💫 [AUTO_ACTION: gas download video ]
-
-User: tolong pisahin vokal
-Bot: Siap, gue pisahin vokalnya! 🎤 [AUTO_ACTION: hapus vokal]
-
-User: cek server
-Bot: Cek status! 📊 [AUTO_ACTION: cek status]
-
 Storage: {abs_path}. File: {dir_contents}
 {search_context}
 Chat: {history_context}"""
@@ -421,10 +380,41 @@ Chat: {history_context}"""
                     if user_text is None:
                         user_text = text
                     action = None
+                    display_text = reply_text
 
-                    if "[AUTO_ACTION:" in reply_text:
+                    # Try to parse JSON response from AI (Gemini/OpenRouter sometimes output JSON)
+                    if reply_text.strip().startswith('{'):
+                        try:
+                            parsed = json.loads(reply_text)
+                            if isinstance(parsed, dict):
+                                if 'reply' in parsed:
+                                    display_text = parsed['reply'] if isinstance(parsed.get('reply'), str) else (str(parsed.get('reply') or ''))
+                                if parsed.get('intent'):
+                                    intent = parsed['intent']
+                                    intent_actions = {
+                                        'download audio': lambda: f"gas download audio {parsed.get('query', '')}" if parsed.get('query') else "gas download audio ",
+                                        'download video': lambda: f"gas download video {parsed.get('query', '')}" if parsed.get('query') else "gas download video ",
+                                        'cari youtube': lambda: f"cari youtube {parsed.get('query', '').replace('ytsearch1:', '')}" if parsed.get('query') else "cari youtube ",
+                                        'cari lagu': lambda: f"cari youtube {parsed.get('query', '').replace('ytsearch1:', '')}" if parsed.get('query') else "cari youtube ",
+                                        'pisah vokal': lambda: "hapus vokal",
+                                        'hapus vokal': lambda: "hapus vokal",
+                                        'kompres media': lambda: "kompres media",
+                                        'kompres video': lambda: "kompres video",
+                                        'sync lirik': lambda: "sync lirik",
+                                        'bersih nama': lambda: "bersih nama",
+                                        'bikin playlist': lambda: "bikin playlist",
+                                        'info sistem': lambda: "cek status",
+                                        'web ui': lambda: "buka web",
+                                    }
+                                    ii = intent.lower().strip()
+                                    if ii in intent_actions:
+                                        action = intent_actions[ii]()
+                        except json.JSONDecodeError:
+                            pass
+
+                    if not action and display_text and "[AUTO_ACTION:" in display_text:
                         import re
-                        match = re.search(r"\[AUTO_ACTION:\s*(.+?)\]", reply_text)
+                        match = re.search(r"\[AUTO_ACTION:\s*(.+?)\]", display_text)
                         if match:
                             action = match.group(1).strip()
 
@@ -563,35 +553,58 @@ Chat: {history_context}"""
                                 import html
                                 bot.reply_to(message, f"🔍 <b>Mencari di YouTube...</b>\nKata kunci: <code>{html.escape(query)}</code>", parse_mode="HTML")
                                     
-                                def _search_task():
+                                def _search_task(page=0):
                                     try:
-                                        res = subprocess.run(["yt-dlp", f"ytsearch5:{query}", "--print", "%(title)s|%(webpage_url)s"], capture_output=True, text=True)
+                                        res = subprocess.run([YT_DLP, f"ytsearch10:{query}", "--print", "%(title)s|%(webpage_url)s"], capture_output=True, text=True)
                                         if res.returncode == 0 and res.stdout.strip():
                                             import telebot
                                             import html
                                                 
                                             lines = res.stdout.strip().split('\n')
-                                            formatted = []
-                                            urls = []
-                                            for idx, line in enumerate(lines, 1):
+                                            all_results = []
+                                            for line in lines:
                                                 parts = line.split('|', 1)
                                                 if len(parts) == 2:
-                                                    title = html.escape(parts[0].strip())
-                                                    url = html.escape(parts[1].strip())
-                                                    formatted.append(f"{idx}. <b>{title}</b>\n{url}")
-                                                    urls.append(f"{idx}) {parts[1].strip()}")
-                                                
+                                                    all_results.append((parts[0].strip(), parts[1].strip()))
+                                            
+                                            if not all_results:
+                                                bot.reply_to(message, "❌ Pencarian tidak menemukan hasil.")
+                                                return
+                                            
+                                            start = page * 5
+                                            page_results = all_results[start:start + 5]
+                                            total_pages = (len(all_results) + 4) // 5
+                                            
+                                            formatted = []
+                                            urls = []
+                                            markup = InlineKeyboardMarkup(row_width=5)
+                                            row_btns = []
+                                            for idx, (title, url) in enumerate(page_results, start + 1):
+                                                t = html.escape(title)
+                                                formatted.append(f"{idx}. <b>{t}</b>\n{url}")
+                                                urls.append(f"{idx}) {url}")
+                                                row_btns.append(InlineKeyboardButton(f"{idx}", callback_data=f"SRCH_DL:{url}"))
+                                            markup.row(*row_btns)
+                                            
+                                            nav = []
+                                            if page > 0:
+                                                nav.append(InlineKeyboardButton("⬅️ Sebelumnya", callback_data=f"SRCH_PAGE:{query}:{page - 1}"))
+                                            if page + 1 < total_pages:
+                                                nav.append(InlineKeyboardButton(f"➡️ Selanjutnya ({page+2}/{total_pages})", callback_data=f"SRCH_PAGE:{query}:{page + 1}"))
+                                            if nav:
+                                                markup.row(*nav)
+                                            
                                             with chat_history_lock:
                                                 if chat_history.get(message.chat.id):
                                                     chat_history[message.chat.id]["search_results"] = urls
                                                 
                                             out_text = "\n\n".join(formatted)
-                                            bot.reply_to(message, f"🎯 <b>Hasil Pencarian:</b>\n\n{out_text}\n\n<i>Balas dengan nomor (misal: 'download nomor 1') atau linknya!</i>", parse_mode="HTML", link_preview_options=telebot.types.LinkPreviewOptions(is_disabled=True))
+                                            bot.reply_to(message, f"🎯 <b>Hasil Pencarian:</b>\n\n{out_text}", parse_mode="HTML", reply_markup=markup, link_preview_options=telebot.types.LinkPreviewOptions(is_disabled=True))
                                         else:
                                             bot.reply_to(message, "❌ Pencarian tidak menemukan hasil.")
                                     except Exception as e:
                                         bot.reply_to(message, f"❌ Error pencarian: {e}")
-                                _safe_submit_task(_search_task)
+                                _safe_submit_task(lambda: _search_task(0))
                             elif action.startswith("cari playlist"):
                                 query = action.replace("cari playlist", "").strip()
                                 import urllib.parse
@@ -602,7 +615,7 @@ Chat: {history_context}"""
                                     try:
                                         # &sp=EgIQAw%253D%253D is YouTube's filter for Playlists
                                         search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}&sp=EgIQAw%253D%253D"
-                                        res = subprocess.run(["yt-dlp", search_url, "--flat-playlist", "--print", "%(title)s|%(webpage_url)s", "--playlist-end", "5"], capture_output=True, text=True)
+                                        res = subprocess.run([YT_DLP, search_url, "--flat-playlist", "--print", "%(title)s|%(webpage_url)s", "--playlist-end", "5"], capture_output=True, text=True)
                                         if res.returncode == 0 and res.stdout.strip():
                                             import telebot
                                             import html
@@ -686,11 +699,20 @@ Chat: {history_context}"""
                             else:
                                 bot.reply_to(message, f"❌ Aksi {action} belum didukung di Telegram.")
                                 
-                            clean_reply = re.sub(r"\[AUTO_ACTION:.*?\]", "", reply_text).strip()
-                            if clean_reply:
-                                bot.reply_to(message, _format_tg(clean_reply), parse_mode="HTML")
+                            try:
+                                clean_reply = re.sub(r"\[AUTO_ACTION:.*?\]", "", display_text).strip()
+                                if clean_reply:
+                                    try:
+                                        bot.reply_to(message, _format_tg(clean_reply), parse_mode="HTML")
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
                             return
-                    bot.reply_to(message, _format_tg(reply_text), parse_mode="HTML")
+                    try:
+                        bot.reply_to(message, _format_tg(display_text), parse_mode="HTML")
+                    except Exception:
+                        pass
                     
                 # Dual-key routing: prefer Gemini (lebih pintar), OpenRouter sebagai fallback
                 reply_text = ""
@@ -910,6 +932,91 @@ def cancel_delete_callback(call):
     """Handler untuk membatalkan hapus semua"""
     bot.edit_message_text("❌ Pembatalan hapus semua. Tidak ada file yang dihapus.", chat_id=call.message.chat.id, message_id=call.message.message_id)
     bot.answer_callback_query(call.id, "Dibatalkan.")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('SRCH_DL:'))
+def search_download_callback(call):
+    url = call.data.replace('SRCH_DL:', '', 1)
+    bot.answer_callback_query(call.id, "Memulai download...")
+    msg = bot.send_message(call.message.chat.id, f"⏳ <b>Sedang Mendownload Audio...</b>\n📍 <code>{url}</code>", parse_mode="HTML")
+    def _task():
+        try:
+            p = subprocess.Popen([get_zdt_bin(), "--download-audio", url], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+            out, _ = p.communicate(timeout=300)
+            import html
+            bot.send_message(call.message.chat.id, f"✅ <b>Download selesai!</b>\n<pre>{html.escape(out[-500:])}</pre>", parse_mode="HTML")
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ Gagal: {e}")
+    _safe_submit_task(_task)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('SRCH_PAGE:'))
+def search_page_callback(call):
+    """Handler untuk pagination hasil pencarian"""
+    parts = call.data.split(':', 2)
+    if len(parts) < 3: return
+    _, query, page_str = parts
+    try:
+        page = int(page_str)
+    except ValueError:
+        return
+    bot.answer_callback_query(call.id)
+    try:
+        bot.edit_message_text(f"🔍 <b>Mencari di YouTube...</b>\nKata kunci: <code>{query}</code>", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML")
+    except Exception: pass
+    
+    def _paginate():
+        try:
+            import html
+            res = subprocess.run([YT_DLP, f"ytsearch10:{query}", "--print", "%(title)s|%(webpage_url)s"], capture_output=True, text=True)
+            if res.returncode != 0 or not res.stdout.strip():
+                try:
+                    bot.edit_message_text("❌ Pencarian tidak menemukan hasil.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                except Exception: pass
+                return
+            lines = res.stdout.strip().split('\n')
+            all_results = []
+            for line in lines:
+                parts = line.split('|', 1)
+                if len(parts) == 2:
+                    all_results.append((parts[0].strip(), parts[1].strip()))
+            if not all_results:
+                try:
+                    bot.edit_message_text("❌ Pencarian tidak menemukan hasil.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                except Exception: pass
+                return
+            start = page * 5
+            page_results = all_results[start:start + 5]
+            total_pages = (len(all_results) + 4) // 5
+            formatted = []
+            urls = []
+            markup = InlineKeyboardMarkup(row_width=5)
+            row_btns = []
+            for idx, (title, url) in enumerate(page_results, start + 1):
+                t = html.escape(title)
+                formatted.append(f"{idx}. <b>{t}</b>\n{url}")
+                urls.append(f"{idx}) {url}")
+                row_btns.append(InlineKeyboardButton(f"{idx}", callback_data=f"SRCH_DL:{url}"))
+            markup.row(*row_btns)
+            nav = []
+            if page > 0:
+                nav.append(InlineKeyboardButton("⬅️ Sebelumnya", callback_data=f"SRCH_PAGE:{query}:{page - 1}"))
+            if page + 1 < total_pages:
+                nav.append(InlineKeyboardButton(f"➡️ Selanjutnya ({page+2}/{total_pages})", callback_data=f"SRCH_PAGE:{query}:{page + 1}"))
+            if nav:
+                markup.row(*nav)
+            with chat_history_lock:
+                if chat_history.get(call.message.chat.id):
+                    chat_history[call.message.chat.id]["search_results"] = urls
+
+            out_text = "\n\n".join(formatted)
+            out_text += "\n\n👇 Pilih nomor di bawah ini"
+            try:
+                bot.edit_message_text(f"🎯 <b>Hasil Pencarian:</b>\n\n{out_text}", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup, link_preview_options=telebot.types.LinkPreviewOptions(is_disabled=True))
+            except Exception: pass
+        except Exception as e:
+            try:
+                bot.edit_message_text(f"❌ Error: {e}", chat_id=call.message.chat.id, message_id=call.message.message_id)
+            except Exception: pass
+    _safe_submit_task(_paginate)
 
 if __name__ == "__main__":
     print("Telegram Bot ZDT berjalan. Menunggu pesan masuk...")

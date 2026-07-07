@@ -1259,12 +1259,11 @@ def scheduler_save_playlists():
 
 @app.route('/api/stats/reset', methods=['POST'])
 @requires_auth
-@requires_csrf
 def reset_stats():
     """Reset all download statistics."""
     import json as _json
-    db_script = ZdtPaths.find_script("zdt_db.py", os.path.dirname(os.path.abspath(__file__)))
-    if db_script and os.path.exists(db_script):
+    db_script = os.path.join(_MODULES_DIR, "zdt_db.py")
+    if os.path.exists(db_script):
         db_path = ZdtPaths.get_db_path()
         try:
             result = subprocess.run([sys.executable, db_script, db_path, "clear_downloads"],

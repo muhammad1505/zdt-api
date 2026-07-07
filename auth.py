@@ -127,9 +127,29 @@ def optional_auth(f):
 
 
 def requires_admin(f):
-    """Decorator: require admin-level access (Bearer token or Basic Auth)."""
+    """Decorator: require admin-level access (Bearer token, X-API-Key, or Basic Auth)."""
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Check X-API-Key (for remote admin access via API key)
+        api_key_header = request.headers.get('X-API-Key', '')
+        if api_key_header:
+            from database import parse_smart_api_key, validate_api_key
+            parsed = parse_smart_api_key(api_key_header)
+            if parsed:
+                key_data = validate_api_key(parsed['key_id'], parsed['secret'])
+                if key_data and key_data.get('role') in ('admin', 'operator', 'full'):
+                    g.auth_type = 'mobile'
+                    g.api_key = key_data
+                    return f(*args, **kwargs)
+            if '|' in api_key_header:
+                parts = api_key_header.split('|')
+                if len(parts) == 2:
+                    key_data = validate_api_key(parts[0], parts[1])
+                    if key_data and key_data.get('role') in ('admin', 'operator', 'full'):
+                        g.auth_type = 'mobile'
+                        g.api_key = key_data
+                        return f(*args, **kwargs)
+
         token = None
         auth_header = request.headers.get('Authorization', '')
         if auth_header.startswith('Bearer '):

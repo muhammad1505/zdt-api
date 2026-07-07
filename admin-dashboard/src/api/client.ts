@@ -5,7 +5,6 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 const api = axios.create({
   baseURL: API_BASE,
   timeout: 15000,
-  headers: { 'Content-Type': 'application/json' },
 });
 
 api.interceptors.request.use((config) => {
@@ -119,6 +118,11 @@ export const clearLogs = async () => {
   return res.data;
 };
 
+export const manageDaemon = async (name: string, action: string) => {
+  const res = await api.post('/api/daemon', { name, action });
+  return res.data;
+};
+
 export const getServerStatus = async () => {
   const res = await api.get('/api/status');
   return res.data;
@@ -189,11 +193,23 @@ export const getDownloadUrl = (filename: string) => {
   return `${API_BASE}/api/dl/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
 };
 
-export const uploadFile = async (file: File) => {
+export const renameFile = async (path: string, newName: string) => {
+  const res = await api.post('/api/files/rename', { path, new_name: newName });
+  return res.data;
+};
+
+export const deleteFile = async (filename: string) => {
+  const res = await api.delete(`/api/files/${encodeURIComponent(filename)}`);
+  return res.data;
+};
+
+export const uploadFile = async (file: File, onProgress?: (pct: number) => void) => {
   const form = new FormData();
   form.append('file', file);
   const res = await api.post('/api/upload', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (p) => {
+      if (p.total && onProgress) onProgress(Math.round((p.loaded / p.total) * 100));
+    }
   });
   return res.data;
 };
@@ -220,6 +236,23 @@ export const testTelegram = async () => {
   return res.data;
 };
 
+// === PROFILE ===
+
+export const getProfile = async () => {
+  const res = await api.get('/api/profile');
+  return res.data;
+};
+
+export const updateProfile = async (data: Record<string, string>) => {
+  const res = await api.put('/api/profile', data);
+  return res.data;
+};
+
+export const changePassword = async (oldPassword: string, newPassword: string) => {
+  const res = await api.post('/api/profile/password', { old_password: oldPassword, new_password: newPassword });
+  return res.data;
+};
+
 // === AI API KEYS ===
 
 export const getAiKeys = async () => {
@@ -229,5 +262,17 @@ export const getAiKeys = async () => {
 
 export const setAiKeys = async (data: Record<string, string>) => {
   const res = await api.post('/api/settings/ai-keys', data);
+  return res.data;
+};
+
+// === DEPENDENCIES ===
+
+export const getDependencies = async () => {
+  const res = await api.get('/api/admin/dependencies');
+  return res.data;
+};
+
+export const installDependencies = async () => {
+  const res = await api.post('/api/admin/dependencies/install', {});
   return res.data;
 };

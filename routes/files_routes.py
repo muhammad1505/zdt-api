@@ -39,8 +39,6 @@ def search_files():
         for root, _, filenames in os.walk(target_dir):
             for f in filenames:
                 ext = os.path.splitext(f)[1].lower()
-                if ext not in MEDIA_EXTENSIONS:
-                    continue
                 if file_type and ext[1:] != file_type:
                     continue
                 if q and q.lower() not in f.lower():
@@ -51,7 +49,7 @@ def search_files():
                     'name': f,
                     'path': rel_path,
                     'size': os.path.getsize(full_path),
-                    'type': ext[1:],
+                    'type': ext[1:] if ext else 'file',
                     'modified': os.path.getmtime(full_path)
                 })
 
@@ -113,18 +111,16 @@ def get_files():
         files = []
         for root, _, filenames in os.walk(scan_dir):
             for f in sorted(filenames):
+                rel_path = os.path.relpath(os.path.join(root, f), target_dir)
+                full_path = os.path.join(root, f)
                 ext = os.path.splitext(f)[1].lower()
-                if ext in MEDIA_EXTENSIONS:
-                    rel_path = os.path.relpath(os.path.join(root, f), target_dir)
-                    full_path = os.path.join(root, f)
-                    size = os.path.getsize(full_path)
-                    files.append({
-                        'name': f,
-                        'path': rel_path,
-                        'size': size,
-                        'type': ext[1:],
-                        'modified': os.path.getmtime(full_path)
-                    })
+                files.append({
+                    'name': f,
+                    'path': rel_path,
+                    'size': os.path.getsize(full_path),
+                    'type': ext[1:] if ext else 'file',
+                    'modified': os.path.getmtime(full_path)
+                })
         
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 50, type=int)
@@ -459,15 +455,17 @@ def upload_file():
                 'message': 'No file selected'
             }), 400
         
-        # Save to target directory
-        from werkzeug.utils import secure_filename
-        filename = secure_filename(file.filename)
+        # Use original filename (no mangling)
+        filename = file.filename
         if not filename:
             return jsonify({
                 'success': False,
                 'error': 'Invalid file name',
                 'message': 'Invalid file name'
             }), 400
+
+        # Prevent path traversal
+        filename = os.path.basename(filename)
             
         target_dir = config.get_target_dir()
         os.makedirs(target_dir, exist_ok=True)

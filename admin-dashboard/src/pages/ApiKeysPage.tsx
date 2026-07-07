@@ -9,51 +9,31 @@ export default function ApiKeysPage() {
   const [generated, setGenerated] = useState<KeyGenerateResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Form
   const [host, setHost] = useState('remote4.vpnmurahjogja.my.id');
   const [port, setPort] = useState(5886);
   const [label, setLabel] = useState('');
   const [role, setRole] = useState('full');
   const [days, setDays] = useState(365);
 
-  const fetchKeys = async () => {
-    try {
-      const data = await getApiKeys();
-      setKeys(data.keys);
-    } catch {}
-  };
-
+  const fetchKeys = async () => { try { const data = await getApiKeys(); setKeys(data.keys); } catch {} };
   useEffect(() => { fetchKeys(); }, []);
 
   const handleGenerate = async () => {
     try {
       setError(null);
-      const result = await generateKey({
-        host: host || 'localhost', port, label: label || 'Unnamed', role, expired_days: days
-      });
-      setGenerated(result);
-      setShowGen(false);
-      fetchKeys();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Gagal generate key');
-    }
+      const result = await generateKey({ host: host || 'localhost', port, label: label || 'Unnamed', role, expired_days: days });
+      setGenerated(result); setShowGen(false); fetchKeys();
+    } catch (err: any) { setError(err.response?.data?.error || 'Gagal generate key'); }
   };
 
   const handleRevoke = async (keyId: string) => {
-    if (!confirm('Revoke this API Key? This cannot be undone.')) return;
-    try {
-      await revokeKey(keyId);
-      fetchKeys();
-    } catch {}
+    if (!confirm('Revoke this API Key?')) return;
+    try { await revokeKey(keyId); fetchKeys(); } catch {}
   };
 
   const handleDelete = async (keyId: string) => {
-    if (!confirm('Permanently delete this API Key? This cannot be undone.')) return;
-    try {
-      await deleteKey(keyId);
-      fetchKeys();
-    } catch {}
+    if (!confirm('Permanently delete this API Key?')) return;
+    try { await deleteKey(keyId); fetchKeys(); } catch {}
   };
 
   const copyToClipboard = (text: string) => {
@@ -63,167 +43,111 @@ export default function ApiKeysPage() {
   };
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 'bold', margin: 0, color: '#E0E0FF' }}>
-          API Keys
-        </h2>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">API Keys</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage access keys for external services</p>
+        </div>
         <button onClick={() => { setShowGen(true); setGenerated(null); }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-            background: '#00F0FF', color: '#09090E', border: 'none',
-            borderRadius: 8, fontWeight: 'bold', fontSize: 14, cursor: 'pointer'
-          }}
-        >
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer">
           <Plus size={18} /> Generate Key
         </button>
       </div>
 
-      {/* Generated Key Display */}
       {generated && (
-        <div style={{
-          background: '#1F1F2C', borderRadius: 12, padding: 20, marginBottom: 24,
-          border: '1px solid #00F0FF'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <Key color="#00F0FF" size={18} />
-            <span style={{ color: '#00F0FF', fontWeight: 'bold', fontSize: 14 }}>New Key Generated!</span>
+        <div className="rounded-2xl border border-brand-200 dark:border-brand-500/30 bg-brand-50 dark:bg-brand-500/5 p-5 md:p-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Key className="text-brand-600 dark:text-brand-400" size={18} />
+            <span className="text-brand-600 dark:text-brand-400 font-semibold text-sm">New Key Generated!</span>
           </div>
-          <div style={{
-            background: '#09090E', borderRadius: 8, padding: 12,
-            fontFamily: 'monospace', fontSize: 12, color: '#00F0FF',
-            wordBreak: 'break-all', marginBottom: 12,
-            maxHeight: 100, overflow: 'auto'
-          }}>
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-3 font-mono text-xs text-brand-600 dark:text-brand-400 break-all mb-3 max-h-24 overflow-auto border border-brand-100 dark:border-brand-500/20">
             {generated.smart_key}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="flex gap-2">
             <button onClick={() => copyToClipboard(generated.smart_key)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
-                background: '#00F0FF', color: '#09090E', border: 'none',
-                borderRadius: 6, fontSize: 13, cursor: 'pointer'
-              }}
-            >
-              {copied ? <Check size={16} /> : <Copy size={16} />}
-              {copied ? 'Copied!' : 'Copy Key'}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-500 text-white text-xs font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer">
+              {copied ? <Check size={16} /> : <Copy size={16} />}{copied ? 'Copied!' : 'Copy Key'}
             </button>
             <button onClick={() => setGenerated(null)}
-              style={{ padding: '8px 16px', background: '#1F1F2C', color: '#6B6B80', border: '1px solid #2A2A3C', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
-            >
-              Dismiss
-            </button>
+              className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-xs hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Dismiss</button>
           </div>
         </div>
       )}
 
-      {error && (
-        <div style={{ color: '#FF003C', fontSize: 13, marginBottom: 16 }}>{error}</div>
-      )}
+      {error && <div className="text-error-600 dark:text-error-500 text-sm">{error}</div>}
 
-      {/* Generate Form Modal */}
       {showGen && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: '#13131A', borderRadius: 16, padding: 32,
-            width: 450, maxWidth: '90%', border: '1px solid #2A2A3C'
-          }}>
-            <h3 style={{ color: '#E0E0FF', margin: '0 0 20px', fontSize: 18 }}>Generate API Key</h3>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>HOST</label>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 w-[450px] max-w-[90%] shadow-theme-md">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-5">Generate API Key</h3>
+            <div className="mb-4">
+              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">HOST</label>
               <input value={host} onChange={e => setHost(e.target.value)}
-                style={{ width: '100%', padding: 10, borderRadius: 6, background: '#09090E', border: '1px solid #2A2A3C', color: '#E0E0FF', fontSize: 14, boxSizing: 'border-box' }} />
+                className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" />
             </div>
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>PORT</label>
+            <div className="flex gap-3 mb-4">
+              <div className="flex-1">
+                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">PORT</label>
                 <input type="number" value={port} onChange={e => setPort(Number(e.target.value))}
-                  style={{ width: '100%', padding: 10, borderRadius: 6, background: '#09090E', border: '1px solid #2A2A3C', color: '#E0E0FF', fontSize: 14, boxSizing: 'border-box' }} />
+                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" />
               </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>DAYS</label>
+              <div className="flex-1">
+                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">DAYS</label>
                 <input type="number" value={days} onChange={e => setDays(Number(e.target.value))}
-                  style={{ width: '100%', padding: 10, borderRadius: 6, background: '#09090E', border: '1px solid #2A2A3C', color: '#E0E0FF', fontSize: 14, boxSizing: 'border-box' }} />
+                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" />
               </div>
             </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>LABEL</label>
+            <div className="mb-4">
+              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">LABEL</label>
               <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. HP Zaki"
-                style={{ width: '100%', padding: 10, borderRadius: 6, background: '#09090E', border: '1px solid #2A2A3C', color: '#E0E0FF', fontSize: 14, boxSizing: 'border-box' }} />
+                className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" />
             </div>
-            <div style={{ marginBottom: 24 }}>
-              <label style={{ color: '#6B6B80', fontSize: 12, display: 'block', marginBottom: 4 }}>ROLE</label>
+            <div className="mb-6">
+              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">ROLE</label>
               <select value={role} onChange={e => setRole(e.target.value)}
-                style={{ width: '100%', padding: 10, borderRadius: 6, background: '#09090E', border: '1px solid #2A2A3C', color: '#E0E0FF', fontSize: 14 }}>
+                className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors">
                 <option value="full">Full Access</option>
                 <option value="read-only">Read Only</option>
               </select>
             </div>
-            <div style={{ display: 'flex', gap: 12 }}>
+            <div className="flex gap-3">
               <button onClick={handleGenerate}
-                style={{ flex: 1, padding: 12, background: '#00F0FF', color: '#09090E', border: 'none', borderRadius: 8, fontWeight: 'bold', cursor: 'pointer' }}>
-                Generate
-              </button>
+                className="flex-1 py-3 rounded-lg bg-brand-500 text-white font-medium text-sm hover:bg-brand-600 transition-colors border-none cursor-pointer">Generate</button>
               <button onClick={() => setShowGen(false)}
-                style={{ padding: '12px 24px', background: '#1F1F2C', color: '#6B6B80', border: '1px solid #2A2A3C', borderRadius: 8, cursor: 'pointer' }}>
-                Cancel
-              </button>
+                className="px-6 py-3 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Cancel</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Keys List */}
-      {keys.map((key) => (
-        <div key={key.id} style={{
-          background: '#13131A', borderRadius: 12, padding: 16, marginBottom: 8,
-          border: '1px solid #2A2A3C', display: 'flex',
-          justifyContent: 'space-between', alignItems: 'center'
-        }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <Key size={14} color={key.active ? '#00F0FF' : '#FF003C'} />
-              <span style={{ color: '#E0E0FF', fontSize: 14, fontFamily: 'monospace' }}>
-                {key.key_id.substring(0, 20)}...
-              </span>
-              <span style={{
-                padding: '2px 8px', borderRadius: 4, fontSize: 11,
-                background: key.active ? '#00F0FF20' : '#FF003C20',
-                color: key.active ? '#00F0FF' : '#FF003C'
-              }}>
-                {key.active ? 'Active' : 'Revoked'}
-              </span>
+      <div className="space-y-2">
+        {keys.map((key) => (
+          <div key={key.id} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-4 flex justify-between items-center gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Key size={14} className={key.active ? 'text-brand-500' : 'text-error-500'} />
+                <span className="text-sm text-gray-800 dark:text-white/90 font-mono">{key.key_id.substring(0, 20)}...</span>
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                  key.active ? 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' : 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500'
+                }`}>{key.active ? 'Active' : 'Revoked'}</span>
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">{key.label} · {key.host}:{key.port} · {key.role}</div>
             </div>
-            <div style={{ color: '#6B6B80', fontSize: 12 }}>
-              {key.label} · {key.host}:{key.port} · {key.role}
+            <div className="flex gap-2">
+              {key.active && (
+                <button onClick={() => handleRevoke(key.key_id)}
+                  className="p-2 rounded-md bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500 border-none cursor-pointer hover:bg-error-100 dark:hover:bg-error-500/20 transition-colors"><Trash2 size={14} /></button>
+              )}
+              {!key.active && (
+                <button onClick={() => handleDelete(key.key_id)}
+                  className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-none cursor-pointer text-xs hover:text-gray-700 dark:hover:text-gray-300 transition-colors">Delete</button>
+              )}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {key.active && (
-              <button onClick={() => handleRevoke(key.key_id)}
-                style={{ padding: '8px 12px', background: '#FF003C20', color: '#FF003C', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>
-                <Trash2 size={14} />
-              </button>
-            )}
-            {!key.active && (
-              <button onClick={() => handleDelete(key.key_id)}
-                style={{ padding: '8px 12px', background: '#6B6B8020', color: '#6B6B80', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>
-                Delete
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
-
-      {keys.length === 0 && (
-        <div style={{ color: '#6B6B80', textAlign: 'center', padding: 40 }}>
-          No API keys yet. Generate one!
-        </div>
-      )}
+        ))}
+        {keys.length === 0 && <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">No API keys yet. Generate one!</div>}
+      </div>
     </div>
   );
 }
