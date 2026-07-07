@@ -10,10 +10,11 @@ set -euo pipefail
 #   sudo bash install.sh
 #
 # Options:
-#   ZDT_API_DIR   — path to zdt-api source (default: script's dir or ~/zdt-api)
-#   ZDT_NO_VENV   — set to 1 to skip Python venv creation
-#   ZDT_NO_BUILD  — set to 1 to skip frontend build
-#   ZDT_NO_SYSTEMD— set to 1 to skip systemd installation
+#   ZDT_API_DIR    — path to zdt-api source (default: script's dir or ~/zdt-api)
+#   ZDT_NO_VENV    — set to 1 to skip Python venv creation
+#   ZDT_NO_BUILD   — set to 1 to skip frontend build
+#   ZDT_NO_SYSTEMD — set to 1 to skip systemd installation
+#   ZDT_NO_DEMUCS  — set to 1 to skip Demucs AI prompt
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ZDT_API_DIR="${ZDT_API_DIR:-$SCRIPT_DIR}"
@@ -91,11 +92,9 @@ install_system_packages() {
     [ -z "$PKG_MANAGER" ] && return
     step "Installing system dependencies"
     $PKG_UPDATE
-    # Split into separate calls in case some packages don't exist
     $PKG_INSTALL $PYTHON_PKG 2>/dev/null || true
-    $PKG_INSTALL $FFMPEG_PKG 2>/dev/null || warn "ffmpeg installation failed (non-critical)"
+    $PKG_INSTALL $FFMPEG_PKG 2>/dev/null || warn "ffmpeg installation failed"
     $PKG_INSTALL git curl 2>/dev/null || true
-    # Node is optional — only needed for frontend build
     if [ -z "${ZDT_NO_BUILD:-}" ] && [ -d "$ZDT_API_DIR/admin-dashboard" ]; then
         $PKG_INSTALL $NODE_PKG 2>/dev/null || warn "Node.js installation failed (will skip frontend build)"
     fi
@@ -107,7 +106,6 @@ ensure_source() {
     if [ ! -d "$ZDT_API_DIR/.git" ]; then
         step "Cloning zdt-api repository"
         if [ "$ZDT_API_DIR" = "$SCRIPT_DIR" ] && [ ! -f "$ZDT_API_DIR/server.py" ]; then
-            # Script is run from outside the repo — clone fresh
             ZDT_API_DIR="/opt/zdt-api"
             info "Cloning to $ZDT_API_DIR ..."
             git clone --depth=1 "$REPO_URL" "$ZDT_API_DIR"
@@ -130,18 +128,28 @@ setup_venv() {
     else
         info "Virtual environment already exists"
     fi
-    # Install requirements
+    local pip="$venv_dir/bin/pip"
+    $pip install --upgrade pip setuptools wheel
     if [ -f "$ZDT_API_DIR/requirements.txt" ]; then
-        "$venv_dir/bin/pip" install --upgrade pip setuptools wheel
-        "$venv_dir/bin/pip" install -r "$ZDT_API_DIR/requirements.txt"
-        ok "Python requirements installed"
+        $pip install -r "$ZDT_API_DIR/requirements.txt"
+        ok "Core Python requirements installed"
     fi
-    # Install additional packages needed by the daemons
-    "$venv_dir/bin/pip" install pyTelegramBotAPI watchdog 2>/dev/null || true
-    # Create symlink so python3 resolves to venv python when run from systemd
+    # Download tools (yt-dlp, spotdl, dll)
+    info "Installing media tools (yt-dlp, spotdl, mutagen, syncedlyrics)..."
+    $pip install yt-dlp spotdl syncedlyrics mutagen 2>/dev/null || true
+    # Daemon dependencies
+    $pip install pyTelegramBotAPI watchdog 2>/dev/null || true
+    # Symlink for systemd
     if [ ! -f "$ZDT_API_DIR/.venv-python" ]; then
         ln -sf "$venv_dir/bin/python3" "$ZDT_API_DIR/.venv-python"
     fi
+    # Symlink tools to venv bin so systemd can find them
+    for tool in yt-dlp spotdl; do
+        if [ -f "$venv_dir/bin/$tool" ] && [ ! -f "/usr/local/bin/$tool" ]; then
+            ln -sf "$venv_dir/bin/$tool" "/usr/local/bin/$tool" 2>/dev/null || true
+        fi
+    done
+    ok "Python tools installed (yt-dlp, spotdl, mutagen, syncedlyrics, pyTelegramBotAPI, watchdog)"
 }
 
 # ─── Build frontend ─────────────────────────────
@@ -162,6 +170,26 @@ build_frontend() {
         return
     }
     ok "Frontend built successfully"
+}
+
+# ─── Setup user directories ─────────────────────
+setup_dirs() {
+    step "Setting up directories"
+    local config_dir="$USER_HOME/.config/zdt"
+    local state_dir="$USER_HOME/.local/state/zdt"
+    mkdir -p "$config_dir" "$state_dir"
+    chown -R "$USER_NAME:$USER_NAME" "$USER_HOME/.config" "$USER_HOME/.local" 2>/dev/null || true
+    ok "Config ($config_dir) and state ($state_dir) directories created"
+}
+
+# ─── Copy VPN script ────────────────────────────
+install_vpn_script() {
+    if [ -f "$ZDT_API_DIR/zdt-vpn.sh" ]; then
+        step "Installing VPN helper script"
+        cp "$ZDT_API_DIR/zdt-vpn.sh" "/usr/local/bin/zdt-vpn.sh"
+        chmod 755 "/usr/local/bin/zdt-vpn.sh"
+        ok "zdt-vpn.sh installed to /usr/local/bin/"
+    fi
 }
 
 # ─── Generate config.env ────────────────────────
@@ -190,12 +218,12 @@ JWT_SECRET=$jwt_secret
 ZDT_WEB_USER=admin
 ZDT_WEB_PASS=$web_pass
 
-# Telegram (optional — set token to enable)
+# Telegram (set token to enable bot)
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 TELEGRAM_ENABLED=false
 
-# VPN (optional)
+# VPN (optional — L2TP/xl2tpd)
 VPN_SERVER=remote4.vpnmurahjogja.my.id
 VPN_USERNAME=gemini
 VPN_PASSWORD=
@@ -211,8 +239,8 @@ ZDT_API_DEBUG=false
 CONFEOF
     chmod 600 "$config_file"
     ok "config.env generated at $config_file"
-    warn "Please edit $config_file to set TELEGRAM_BOT_TOKEN and other secrets"
-    echo -e "  ${CYAN}Web dashboard login:${NC}  admin / $web_pass"
+    warn "Edit $config_file to set TELEGRAM_BOT_TOKEN and other settings"
+    echo -e "  ${CYAN}Web dashboard:${NC}  admin / $web_pass"
 }
 
 # ─── Database init ──────────────────────────────
@@ -225,7 +253,6 @@ init_database() {
         python_cmd="python3"
     fi
     cd "$ZDT_API_DIR"
-    # Run a quick Python one-liner to init the database
     $python_cmd -c "
 import os, sys
 sys.path.insert(0, '.')
@@ -253,8 +280,7 @@ install_systemd() {
 
     for f in "$svc_dir"/*.service "$svc_dir"/*.timer; do
         [ ! -f "$f" ] && continue
-        local name
-        name="$(basename "$f")"
+        local name; name="$(basename "$f")"
         info "Installing $name ..."
         cp "$f" "/etc/systemd/system/$name"
         sed -i "s|__USER__|$USER_NAME|g" "/etc/systemd/system/$name"
@@ -264,11 +290,10 @@ install_systemd() {
 
     systemctl daemon-reload
 
-    # Enable and start core services
     info "Enabling and starting services..."
     systemctl enable --now zdt-api.service 2>/dev/null && ok "zdt-api.service started" || warn "zdt-api.service failed to start"
     if [ -f "$svc_dir/zdt-telegram.service" ] && [ -f "$ZDT_API_DIR/zdt-telegram.py" ]; then
-        systemctl enable --now zdt-telegram.service 2>/dev/null && ok "zdt-telegram.service started" || warn "zdt-telegram.service failed (set TELEGRAM_BOT_TOKEN first)"
+        systemctl enable --now zdt-telegram.service 2>/dev/null && ok "zdt-telegram.service started" || warn "zdt-telegram.service not started (set TELEGRAM_BOT_TOKEN first)"
     fi
     if [ -f "$svc_dir/zdt-scheduler.service" ] && [ -f "$ZDT_API_DIR/zdt-scheduler.py" ]; then
         systemctl enable --now zdt-scheduler.timer 2>/dev/null || true
@@ -276,6 +301,57 @@ install_systemd() {
     fi
     if [ -f "$svc_dir/zdt-watch.service" ] && [ -f "$ZDT_API_DIR/zdt-watch.py" ]; then
         systemctl enable --now zdt-watch.service 2>/dev/null || true
+    fi
+}
+
+# ─── Demucs AI (optional) ───────────────────────
+setup_demucs() {
+    [ -n "${ZDT_NO_DEMUCS:-}" ] && return
+    if [ -f "$USER_HOME/.local/share/zdt/demucs_venv/bin/demucs" ]; then
+        return
+    fi
+    step "AI Vocal Remover — Demucs (optional)"
+    echo "  Demucs (~2GB with PyTorch) untuk pisah vokal pakai AI."
+    echo "  Bisa diinstal nanti lewat Tools > Hapus Vokal."
+    echo
+    read -r -p "  Install Demucs sekarang? (y/N): " ans
+    if [[ "$ans" =~ ^[Yy]$ ]]; then
+        local demucs_venv="$USER_HOME/.local/share/zdt/demucs_venv"
+        info "Menginstal Demucs (ini bisa lama, ~2GB)..."
+        python3 -m venv "$demucs_venv" 2>/dev/null || true
+        "$demucs_venv/bin/pip" install -U pip setuptools demucs torchcodec 2>&1 | tail -3 || warn "Demucs installation failed"
+        if [ -f "$demucs_venv/bin/demucs" ]; then
+            ok "Demucs installed!"
+        fi
+    fi
+}
+
+# ─── AI keys prompt ─────────────────────────────
+setup_ai_keys() {
+    step "AI API Keys (optional)"
+    echo "  ZDT API can use Google Gemini or OpenRouter for AI chat features."
+    echo "  Without these, the bot falls back to keyword-based commands."
+    echo
+    local gemini_file="$USER_HOME/.config/zdt/gemini_key"
+    local openrouter_file="$USER_HOME/.config/zdt/openrouter_key"
+
+    if [ ! -f "$gemini_file" ]; then
+        read -r -p "  Enter Gemini API key (or blank to skip): " gemini_key
+        if [ -n "$gemini_key" ]; then
+            echo "$gemini_key" > "$gemini_file"
+            chmod 600 "$gemini_file"
+            chown "$USER_NAME:$USER_NAME" "$gemini_file" 2>/dev/null || true
+            ok "Gemini key saved"
+        fi
+    fi
+    if [ ! -f "$openrouter_file" ]; then
+        read -r -p "  Enter OpenRouter API key (or blank to skip): " openrouter_key
+        if [ -n "$openrouter_key" ]; then
+            echo "$openrouter_key" > "$openrouter_file"
+            chmod 600 "$openrouter_file"
+            chown "$USER_NAME:$USER_NAME" "$openrouter_file" 2>/dev/null || true
+            ok "OpenRouter key saved"
+        fi
     fi
 }
 
@@ -288,65 +364,45 @@ print_summary() {
     echo
     echo -e "  ${CYAN}Install dir:${NC}  $ZDT_API_DIR"
     echo -e "  ${CYAN}Config:${NC}       $ZDT_API_DIR/config.env"
-    echo -e "  ${CYAN}Python venv:${NC}  $ZDT_API_DIR/venv"
+    echo -e "  ${CYAN}VENV:${NC}         $ZDT_API_DIR/venv"
+    echo -e "  ${CYAN}Data dir:${NC}     $USER_HOME/.config/zdt/"
+    echo
+    echo -e "  ${BOLD}Installed tools:${NC}"
+    for tool in yt-dlp spotdl ffmpeg node; do
+        if command -v "$tool" &>/dev/null; then
+            echo -e "    ${GREEN}✓${NC} $tool"
+        else
+            echo -e "    ${YELLOW}○${NC} $tool (not found in PATH)"
+        fi
+    done
+    if [ -f "$ZDT_API_DIR/venv/bin/demucs" ] || [ -f "$USER_HOME/.local/share/zdt/demucs_venv/bin/demucs" ]; then
+        echo -e "    ${GREEN}✓${NC} demucs"
+    fi
     echo
     echo -e "  ${BOLD}Services:${NC}"
-    echo -e "    systemctl status zdt-api.service"
-    echo -e "    systemctl status zdt-telegram.service"
-    echo -e "    systemctl status zdt-watch.service"
-    echo -e "    systemctl status zdt-scheduler.service"
+    for svc in zdt-api zdt-telegram zdt-watch zdt-scheduler; do
+        if systemctl is-enabled "$svc" &>/dev/null 2>&1; then
+            echo -e "    ${GREEN}✓${NC} $svc"
+        fi
+    done
     echo
     echo -e "  ${BOLD}Logs:${NC}"
     echo -e "    journalctl -u zdt-api -n 50 --no-pager"
     echo -e "    journalctl -u zdt-telegram -n 50 --no-pager"
     echo
     if [ -f "$ZDT_API_DIR/config.env" ]; then
-        local web_pass
-        web_pass="$(grep ^ZDT_WEB_PASS "$ZDT_API_DIR/config.env" 2>/dev/null | cut -d= -f2)"
-        local web_user
-        web_user="$(grep ^ZDT_WEB_USER "$ZDT_API_DIR/config.env" 2>/dev/null | cut -d= -f2)"
+        local wp; wp="$(grep ^ZDT_WEB_PASS "$ZDT_API_DIR/config.env" 2>/dev/null | cut -d= -f2)"
+        local wu; wu="$(grep ^ZDT_WEB_USER "$ZDT_API_DIR/config.env" 2>/dev/null | cut -d= -f2)"
         echo -e "  ${BOLD}Web Dashboard:${NC}"
         echo -e "    http://localhost:2000/admin/"
-        echo -e "    Login: ${web_user:-admin} / ${web_pass:-<see config.env>}"
+        echo -e "    Login: ${wu:-admin} / ${wp:-<see config.env>}"
     fi
     echo
     echo -e "  ${YELLOW}Next steps:${NC}"
-    echo -e "    1. Edit $ZDT_API_DIR/config.env for your settings"
-    echo -e "    2. Set TELEGRAM_BOT_TOKEN if you want Telegram bot"
-    echo -e "    3. Restart services: sudo systemctl restart zdt-api"
+    echo -e "    1. sudo systemctl restart zdt-api"
+    echo -e "    2. Edit $ZDT_API_DIR/config.env"
+    echo -e "    3. Set TELEGRAM_BOT_TOKEN untuk bot Telegram"
     echo
-}
-
-# ─── Post-install AI keys prompt ────────────────
-setup_ai_keys() {
-    step "AI API Keys (optional)"
-    echo "  ZDT API can use Google Gemini or OpenRouter for AI chat features."
-    echo "  Without these, the bot will fall back to keyword-based commands."
-    echo
-    local gemini_file="$USER_HOME/.config/zdt/gemini_key"
-    local openrouter_file="$USER_HOME/.config/zdt/openrouter_key"
-
-    mkdir -p "$USER_HOME/.config/zdt"
-    chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config/zdt" 2>/dev/null || true
-
-    if [ ! -f "$gemini_file" ]; then
-        read -r -p "  Enter Gemini API key (or leave blank to skip): " gemini_key
-        if [ -n "$gemini_key" ]; then
-            echo "$gemini_key" > "$gemini_file"
-            chmod 600 "$gemini_file"
-            chown "$USER_NAME:$USER_NAME" "$gemini_file" 2>/dev/null || true
-            ok "Gemini key saved"
-        fi
-    fi
-    if [ ! -f "$openrouter_file" ]; then
-        read -r -p "  Enter OpenRouter API key (or leave blank to skip): " openrouter_key
-        if [ -n "$openrouter_key" ]; then
-            echo "$openrouter_key" > "$openrouter_file"
-            chmod 600 "$openrouter_file"
-            chown "$USER_NAME:$USER_NAME" "$openrouter_file" 2>/dev/null || true
-            ok "OpenRouter key saved"
-        fi
-    fi
 }
 
 # ════════════════════════════════════════════════
@@ -364,9 +420,12 @@ main() {
     install_system_packages
     setup_venv
     build_frontend
+    setup_dirs
+    install_vpn_script
     generate_config
     init_database
     install_systemd
+    setup_demucs
     setup_ai_keys
     print_summary
 }
