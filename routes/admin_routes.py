@@ -556,6 +556,38 @@ def vpn_set_config():
         }), 500
 
 
+@admin_bp.route('/api/update-check', methods=['GET'])
+@requires_admin
+def check_update():
+    """Check GitHub for newer version (from zdt-web)."""
+    import urllib.request
+    import json as _ju
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/repos/muhammad1505/zdt-music-toolkit/releases/latest",
+            headers={"User-Agent": f"ZDT-Enterprise/{config.get_version()}", "Accept": "application/vnd.github.v3+json"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = _ju.loads(resp.read())
+            latest_tag = data.get("tag_name", "")
+            ver = config.get_version()
+            current_version = "v" + ver
+            is_newer = False
+            if latest_tag and latest_tag != current_version:
+                try:
+                    curr = [int(x) for x in ver.split(".")]
+                    latest = [int(x) for x in latest_tag.lstrip("v").split(".")]
+                    while len(curr) < len(latest): curr.append(0)
+                    while len(latest) < len(curr): latest.append(0)
+                    is_newer = latest > curr
+                except ValueError:
+                    is_newer = latest_tag != current_version
+            body = data.get("body", "")[:500] if data.get("body") else ""
+            return _ju.dumps({"has_update": is_newer, "current": current_version, "latest": latest_tag,
+                              "release_url": data.get("html_url", ""), "release_body": body}), 200, {"Content-Type": "application/json"}
+    except Exception as e:
+        return _ju.dumps({"has_update": False, "error": str(e)}), 200, {"Content-Type": "application/json"}
+
 
 # === SERVICE MANAGEMENT ===
 
