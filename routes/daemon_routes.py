@@ -4,9 +4,11 @@ import os
 import signal
 import shutil
 import logging
+import json as _json
 
 from auth import requires_auth
 from config import config
+from zdt_paths import ZdtPaths
 
 logger = logging.getLogger(__name__)
 daemon_bp = Blueprint('daemon', __name__)
@@ -487,3 +489,47 @@ def server_tools():
             'error': 'Internal server error',
             'message': str(e)
         }), 500
+
+
+@daemon_bp.route('/api/scheduler/status', methods=['GET'])
+@requires_auth
+def scheduler_status():
+    """Check if scheduler daemon is running (from zdt-web)."""
+    try:
+        result = subprocess.run(
+            ['pgrep', '-f', 'zdt-scheduler.py'],
+            capture_output=True, timeout=3
+        )
+        return jsonify({"running": result.returncode == 0})
+    except Exception:
+        return jsonify({"running": False})
+
+
+@daemon_bp.route('/api/scheduler/playlists', methods=['GET'])
+@requires_auth
+def scheduler_get_playlists():
+    """Get scheduled playlist config (from zdt-web)."""
+    try:
+        config_path = ZdtPaths.get_scheduler_path()
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                return jsonify(_json.load(f))
+        return jsonify({"playlists": []})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@daemon_bp.route('/api/scheduler/playlists', methods=['POST'])
+@requires_auth
+def scheduler_save_playlists():
+    """Save playlist schedule config (from zdt-web)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        config_path = ZdtPaths.get_scheduler_path()
+        config_dir = ZdtPaths.get_config_dir()
+        os.makedirs(config_dir, exist_ok=True)
+        with open(config_path, 'w') as f:
+            _json.dump(data, f, indent=2)
+        return jsonify({"success": True, "message": "Jadwal tersimpan!"})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

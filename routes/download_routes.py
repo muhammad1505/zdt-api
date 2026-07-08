@@ -1,13 +1,18 @@
 from flask import Blueprint, request, jsonify, g
 import os
 import subprocess
+import shutil
+import threading
 
 from auth import requires_auth
 from config import config
 from database import create_download, get_download, get_downloads, update_download_status, delete_download, clear_download_history
 from werkzeug.utils import secure_filename
+from zdt_paths import ZdtPaths
 
 downloads_bp = Blueprint('downloads', __name__)
+
+WEB_TASK_LOG_PATH = '/tmp/zdt_web_task.log'
 
 SHELL_METACHARS = [';', '|', '$', '`', '&&', '||']
 
@@ -248,3 +253,100 @@ def clear_history():
             'error': 'Internal server error',
             'message': str(e)
         }), 500
+
+
+@downloads_bp.route('/api/spotify-sync', methods=['POST'])
+@requires_auth
+def trigger_spotify_sync():
+    """Trigger Spotify playlist sync (from zdt-web)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        url = data.get('url', '')
+        if not url or not url.startswith(('http://', 'https://')):
+            return jsonify({"success": False, "message": "URL Playlist tidak valid!"}), 400
+        zdt_bin = shutil.which("zdt") or ZdtPaths.get_bin_path()
+        with open(WEB_TASK_LOG_PATH, "w") as log_file:
+            subprocess.Popen([zdt_bin, "--spotify-sync", url], stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
+        return jsonify({"success": True, "message": "Sinkronisasi Spotify berjalan di background!"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@downloads_bp.route('/api/playlist/items', methods=['POST'])
+@requires_auth
+def playlist_items():
+    """Fetch playlist contents using yt-dlp (from zdt-web)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        url = data.get('url', '')
+        if not url:
+            return jsonify({"success": False, "message": "URL kosong!"}), 400
+        result = subprocess.run(
+            ['yt-dlp', '--flat-playlist', '--dump-json', '--no-warnings', url],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            return jsonify({"success": False, "message": "Gagal fetch playlist: " + result.stderr[:200]}), 400
+        items = []
+        for line in result.stdout.strip().split('\n'):
+            if not line.strip():
+                continue
+            try:
+                import json as _j
+                entry = _j.loads(line)
+                items.append({
+                    "id": entry.get("id", ""),
+                    "title": entry.get("title", ""),
+                    "artist": entry.get("uploader", entry.get("channel", entry.get("creator", "Unknown"))),
+                    "url": f"https://youtube.com/watch?v={entry.get('id', '')}",
+                    "duration": entry.get("duration", 0),
+                    "index": entry.get("playlist_index", 0)
+                })
+            except _j.JSONDecodeError:
+                continue
+        return jsonify({"success": True, "items": items, "count": len(items)})
+    except subprocess.TimeoutExpired:
+        return jsonify({"success": False, "message": "Timeout: playlist terlalu besar atau yt-dlp lambat."}), 504
+    except FileNotFoundError:
+        return jsonify({"success": False, "message": "yt-dlp tidak ditemukan di sistem!"}), 500
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@downloads_bp.route('/api/download-selected', methods=['POST'])
+@requires_auth
+def download_selected():
+    """Download multiple URLs sequentially in background thread (from zdt-web)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        urls = data.get('urls', [])
+        fmt = data.get('format', 'audio')
+        quality = data.get('quality', '')
+        if not urls:
+            return jsonify({"success": False, "message": "Tidak ada URL dipilih!"}), 400
+
+        zdt_bin = shutil.which("zdt") or ZdtPaths.get_bin_path()
+        log_path = WEB_TASK_LOG_PATH
+        is_video = fmt == "video"
+
+        def _run_batch():
+            with open(log_path, "w") as f:
+                f.write(f"[ZDT] Memproses {len(urls)} antrean...\n")
+            for i, url in enumerate(urls):
+                with open(log_path, "a") as f:
+                    f.write(f"\n[{i+1}/{len(urls)}] {url}\n")
+                cmd = [zdt_bin, "--download-video" if is_video else "--download-audio", url]
+                with open(log_path, "a") as f:
+                    try:
+                        subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, timeout=600)
+                    except subprocess.TimeoutExpired:
+                        f.write(f"[{i+1}/{len(urls)}] Timeout\n")
+                with open(log_path, "a") as f:
+                    f.write(f"[{i+1}/{len(urls)}] Selesai\n")
+            with open(log_path, "a") as f:
+                f.write(f"\n[ZDT] Batch {len(urls)} antrean selesai!\n")
+
+        threading.Thread(target=_run_batch, daemon=True).start()
+        return jsonify({"success": True, "message": f"Memproses {len(urls)} video... Cek Log untuk progres!"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500

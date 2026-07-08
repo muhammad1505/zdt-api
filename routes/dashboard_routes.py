@@ -1,11 +1,15 @@
 from flask import Blueprint, request, jsonify
 import os
 import subprocess
+import shutil
+import logging
 
 from auth import requires_auth
 from config import config
-from database import get_downloads
+from database import get_downloads, clear_download_history
+from zdt_paths import ZdtPaths
 
+logger = logging.getLogger(__name__)
 dashboard_bp = Blueprint('dashboard', __name__)
 
 
@@ -64,6 +68,17 @@ def get_status():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@dashboard_bp.route('/api/stats/reset', methods=['POST'])
+@requires_auth
+def reset_stats():
+    """Reset all download statistics (from zdt-web)."""
+    try:
+        clear_download_history()
+        return jsonify({"success": True, "message": "Semua data statistik berhasil direset!"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 def _is_process_running(process_name):

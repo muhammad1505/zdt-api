@@ -2,10 +2,12 @@ from flask import Blueprint, jsonify, send_file, request
 import os
 import shutil
 import subprocess
+import logging
 
 from auth import requires_auth
 from config import config
 
+logger = logging.getLogger(__name__)
 files_bp = Blueprint('files', __name__)
 
 MEDIA_EXTENSIONS = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.mp4', '.mkv', '.webm'}
@@ -487,6 +489,61 @@ def upload_file():
             'error': 'Internal server error',
             'message': str(e)
         }), 500
+
+
+@files_bp.route('/api/metadata', methods=['POST'])
+@requires_auth
+def update_metadata():
+    """Update audio file metadata (title/artist).
+    Ported from zdt-web.py for unified API."""
+    try:
+        import mutagen
+        from mutagen.easyid3 import EasyID3
+        from mutagen.mp4 import MP4
+        from mutagen.flac import FLAC
+    except ImportError:
+        return jsonify({"success": False, "message": "Mutagen belum terinstall."}), 400
+
+    data = request.get_json(silent=True) or {}
+    filename = data.get('filename')
+    title = data.get('title')
+    artist = data.get('artist')
+    if not filename:
+        return jsonify({"success": False, "message": "Pilih file."}), 400
+    if not title and not artist:
+        return jsonify({"success": False, "message": "Isi minimal title atau artist."}), 400
+
+    target_dir = config.get_target_dir()
+    filepath = os.path.realpath(os.path.join(target_dir, filename))
+    real_target = os.path.realpath(target_dir)
+    if os.path.commonpath([real_target, filepath]) != real_target:
+        return jsonify({"success": False, "message": "Akses ditolak."}), 403
+    if not os.path.exists(filepath):
+        return jsonify({"success": False, "message": "File tidak ditemukan."}), 404
+
+    try:
+        ext = filepath.lower()
+        if ext.endswith('.mp3'):
+            audio = EasyID3(filepath)
+            if title: audio["title"] = title
+            if artist: audio["artist"] = artist
+            audio.save()
+        elif ext.endswith('.m4a'):
+            audio = MP4(filepath)
+            if title: audio.tags["\xa9nam"] = title
+            if artist: audio.tags["\xa9ART"] = artist
+            audio.save()
+        elif ext.endswith('.flac'):
+            audio = FLAC(filepath)
+            if title: audio["title"] = title
+            if artist: audio["artist"] = artist
+            audio.save()
+        else:
+            return jsonify({"success": False, "message": "Format file tidak didukung. Gunakan MP3, M4A, atau FLAC."}), 400
+        return jsonify({"success": True, "message": "Metadata berhasil diubah."})
+    except Exception as e:
+        logger.error(f"Metadata error: {str(e)}")
+        return jsonify({"success": False, "message": "Gagal memproses file"}), 500
 
 
 @files_bp.route('/api/files/<path:filename>', methods=['DELETE'])

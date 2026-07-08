@@ -2,10 +2,15 @@ from flask import Blueprint, request, jsonify, g
 import os
 import subprocess
 import secrets
+import urllib.request
+import json as _json
+import logging
 
 from auth import requires_auth
 from config import config
+from zdt_paths import ZdtPaths
 
+logger = logging.getLogger(__name__)
 settings_bp = Blueprint('settings', __name__)
 
 
@@ -656,6 +661,56 @@ def test_telegram_settings():
             'error': 'TELEGRAM_SEND_FAILED',
             'message': str(e)
         }), 500
+
+
+@settings_bp.route('/api/notify/config', methods=['GET', 'POST'])
+@requires_auth
+def notify_config():
+    """Get or set Telegram notification config (from zdt-web)."""
+    if request.method == 'GET':
+        token = config.get('TELEGRAM_NOTIFY_TOKEN', '')
+        chat_id = config.get('TELEGRAM_NOTIFY_CHAT_ID', '')
+        return jsonify({
+            "configured": bool(token and chat_id),
+            "chat_id": chat_id if chat_id else ""
+        })
+    
+    try:
+        data = request.get_json(silent=True) or {}
+        token = data.get('token', '')
+        chat_id = data.get('chat_id', '')
+        if token:
+            config.update_config('TELEGRAM_NOTIFY_TOKEN', token)
+        if chat_id:
+            config.update_config('TELEGRAM_NOTIFY_CHAT_ID', chat_id)
+        return jsonify({"success": True, "message": "Konfigurasi notifikasi disimpan!"})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@settings_bp.route('/api/notify/test', methods=['POST'])
+@requires_auth
+def notify_test():
+    """Send a test notification via Telegram (from zdt-web)."""
+    try:
+        token = config.get('TELEGRAM_NOTIFY_TOKEN', '')
+        chat_id = config.get('TELEGRAM_NOTIFY_CHAT_ID', '')
+        if not token or not chat_id:
+            return jsonify({"success": False, "message": "Notify belum dikonfigurasi."}), 400
+        
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = _json.dumps({"chat_id": chat_id, "text": "🔔 <b>ZDT Test Notification</b>\nServer API terhubung dengan notifikasi Telegram!", "parse_mode": "HTML"}).encode()
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = _json.loads(resp.read())
+            if result.get('ok'):
+                return jsonify({"success": True, "message": "Test notification terkirim! Cek Telegram."})
+            return jsonify({"success": False, "message": result.get('description', 'Unknown error')}), 400
+    except urllib.request.HTTPError as e:
+        body = e.read().decode(errors='replace')
+        return jsonify({"success": False, "message": f"Telegram API {e.code}: {body}"}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @settings_bp.route('/api/server/info', methods=['GET'])
