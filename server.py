@@ -198,7 +198,7 @@ def create_app():
         @app.route('/favicon.ico')
         @app.route('/favicon.svg')
         def favicon():
-            return send_from_directory(admin_dist, 'favicon.svg')
+            return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'favicon.svg')
 
         @app.route('/')
         def zdt_web_home():

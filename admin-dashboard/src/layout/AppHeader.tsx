@@ -127,22 +127,31 @@ export default function AppHeader({ username, onLogout }: Props) {
     return () => document.removeEventListener('mousedown', handle);
   }, []);
 
+  // Notification preferences (persisted in localStorage)
+  const [notifSoundEnabled, setNotifSoundEnabled] = useState(
+    localStorage.getItem('zdt_notif_sound') !== 'false'
+  );
+  const [notifDesktopEnabled, setNotifDesktopEnabled] = useState(
+    localStorage.getItem('zdt_notif_desktop') !== 'false'
+  );
+
   // Notification sound using Web Audio API (no external file needed)
   const playNotifSound = useCallback(() => {
+    if (!notifSoundEnabled) return;
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.frequency.value = 660;
+      osc.frequency.value = 880;
       osc.type = 'sine';
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
       osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.4);
+      osc.stop(ctx.currentTime + 0.3);
     } catch { /* Audio not supported */ }
-  }, []);
+  }, [notifSoundEnabled]);
 
   // Request desktop notification permission on mount
   useEffect(() => {
@@ -174,7 +183,7 @@ export default function AppHeader({ username, onLogout }: Props) {
             // Play sound + desktop notification for new important events
             playNotifSound();
             const newNotif = important.find(n => n.id === maxId) || important[0];
-            if (newNotif && 'Notification' in window && Notification.permission === 'granted') {
+            if (notifDesktopEnabled && newNotif && 'Notification' in window && Notification.permission === 'granted') {
               const isError = newNotif.status_code >= 400;
               new Notification('ZDT API' + (isError ? ' ⚠️' : ''), {
                 body: eventLabel(newNotif),
@@ -294,6 +303,29 @@ export default function AppHeader({ username, onLogout }: Props) {
                 <div className="px-4 pb-2 mb-2 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
                   <h4 className="text-sm font-semibold text-gray-800 dark:text-white/90">Notifications</h4>
                   <Link to="/logs" className="text-xs text-brand-500 hover:underline no-underline">View all</Link>
+                </div>
+                {/* Notification preferences toggles */}
+                <div className="px-4 pb-3 mb-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3 text-xs">
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none text-gray-500 dark:text-gray-400">
+                    <input type="checkbox" checked={notifSoundEnabled}
+                      onChange={(e) => {
+                        const v = e.target.checked;
+                        setNotifSoundEnabled(v);
+                        localStorage.setItem('zdt_notif_sound', String(v));
+                      }}
+                      className="w-3.5 h-3.5 accent-amber-500" />
+                    Sound
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none text-gray-500 dark:text-gray-400">
+                    <input type="checkbox" checked={notifDesktopEnabled}
+                      onChange={(e) => {
+                        const v = e.target.checked;
+                        setNotifDesktopEnabled(v);
+                        localStorage.setItem('zdt_notif_desktop', String(v));
+                      }}
+                      className="w-3.5 h-3.5 accent-amber-500" />
+                    Desktop
+                  </label>
                 </div>
                 {notifications.length === 0 ? (
                   <div className="px-4 py-6 text-center text-xs text-gray-400">No notifications</div>

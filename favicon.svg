@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1c1917"/>
+      <stop offset="100%" stop-color="#0c0a09"/>
+    </linearGradient>
+    <linearGradient id="bar1" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="bar2" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect x="2" y="2" width="44" height="44" rx="10" fill="url(#bg)" stroke="#292524" stroke-width="1"/>
+  <!-- Equalizer bars -->
+  <rect x="9" y="24" width="4" height="14" rx="2" fill="url(#bar1)" opacity="0.9">
+    <animate attributeName="height" values="14;22;14" dur="0.9s" repeatCount="indefinite"/>
+    <animate attributeName="y" values="24;16;24" dur="0.9s" repeatCount="indefinite"/>
+  </rect>
+  <rect x="16" y="16" width="4" height="22" rx="2" fill="url(#bar2)" opacity="0.9">
+    <animate attributeName="height" values="22;30;22" dur="1.1s" repeatCount="indefinite"/>
+    <animate attributeName="y" values="16;8;16" dur="1.1s" repeatCount="indefinite"/>
+  </rect>
+  <rect x="23" y="10" width="4" height="28" rx="2" fill="url(#bar1)" opacity="0.95">
+    <animate attributeName="height" values="28;16;28" dur="0.8s" repeatCount="indefinite"/>
+    <animate attributeName="y" values="10;22;10" dur="0.8s" repeatCount="indefinite"/>
+  </rect>
+  <rect x="30" y="18" width="4" height="20" rx="2" fill="url(#bar2)" opacity="0.9">
+    <animate attributeName="height" values="20;26;20" dur="1.0s" repeatCount="indefinite"/>
+    <animate attributeName="y" values="18;12;18" dur="1.0s" repeatCount="indefinite"/>
+  </rect>
+  <rect x="37" y="26" width="4" height="12" rx="2" fill="url(#bar1)" opacity="0.85">
+    <animate attributeName="height" values="12;18;12" dur="1.3s" repeatCount="indefinite"/>
+    <animate attributeName="y" values="26;20;26" dur="1.3s" repeatCount="indefinite"/>
+  </rect>
+  <!-- Glow dot -->
+  <circle cx="24" cy="44" r="2" fill="#d97706" opacity="0.4">
+    <animate attributeName="opacity" values="0.4;0.8;0.4" dur="2s" repeatCount="indefinite"/>
+  </circle>
+</svg>
