@@ -8,8 +8,11 @@ Type=simple
 User=__USER__
 Group=__USER__
 WorkingDirectory=__ZDT_API_DIR__
-# Single worker because SQLite doesn't support concurrent writes from multiple processes
-ExecStart=__PYTHON__ -m gunicorn --bind 0.0.0.0:2000 --workers 1 --timeout 120 server:app
+# Multi-worker with Gunicorn config file (gunicorn_config.py)
+# - SQLite WAL mode supports concurrent reads; writes serialized via DB lock
+# - Redis rate limiter (optional) for shared state across workers
+# - Preloaded app for faster startup
+ExecStart=__PYTHON__ -m gunicorn --config gunicorn_config.py server:app
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=on-failure
 RestartSec=5

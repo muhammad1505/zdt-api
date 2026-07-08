@@ -27,7 +27,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<AppLayout username={user?.username || ''} onLogout={logout} />}>
+        <Route element={<AppLayout username={user?.username || ''} role={user?.role || 'operator'} onLogout={logout} />}>
           <Route path="/" element={<ProtectedRoute isAuthenticated={isAuthenticated}><DashboardPage /></ProtectedRoute>} />
           <Route path="/files" element={<ProtectedRoute isAuthenticated={isAuthenticated}><FilesPage /></ProtectedRoute>} />
           <Route path="/keys" element={<ProtectedRoute isAuthenticated={isAuthenticated}><ApiKeysPage /></ProtectedRoute>} />

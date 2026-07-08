@@ -105,13 +105,30 @@ def verify_key():
 
 @auth_bp.route('/api/health', methods=['GET'])
 def health():
-    """Public health check endpoint."""
+    """Public health check endpoint for monitoring (Uptime Kuma, systemd, etc.)."""
     uptime = int(time.time() - _start_time)
+    
+    # Check database connectivity
+    db_ok = False
+    try:
+        from database import get_connection
+        conn = get_connection()
+        conn.execute('SELECT 1').fetchone()
+        db_ok = True
+    except Exception:
+        pass
+    
+    # Determine overall status
+    status = 'ok' if db_ok else 'degraded'
+    http_code = 200 if db_ok else 503
+    
     return jsonify({
-        'status': 'ok',
+        'status': status,
         'version': config.get_version(),
-        'uptime': uptime
-    })
+        'uptime': uptime,
+        'database': 'connected' if db_ok else 'disconnected',
+        'service': 'zdt-api'
+    }), http_code
 
 
 @auth_bp.route('/api/profile', methods=['GET'])

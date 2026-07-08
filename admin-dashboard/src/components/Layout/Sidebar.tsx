@@ -7,19 +7,21 @@ import {
 import { useSidebar } from '../../context/SidebarContext';
 
 const mainItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/files', icon: Folder, label: 'Files' },
-  { to: '/keys', icon: Key, label: 'API Keys' },
-  { to: '/users', icon: Users, label: 'Users' },
-  { to: '/tools', icon: Wrench, label: 'Tools' },
-  { to: '/settings', icon: Sliders, label: 'Settings' },
-  { to: '/logs', icon: ScrollText, label: 'Logs' },
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard', adminOnly: false },
+  { to: '/files', icon: Folder, label: 'Files', adminOnly: false },
+  { to: '/keys', icon: Key, label: 'API Keys', adminOnly: true },
+  { to: '/users', icon: Users, label: 'Users', adminOnly: true },
+  { to: '/tools', icon: Wrench, label: 'Tools', adminOnly: false },
+  { to: '/settings', icon: Sliders, label: 'Settings', adminOnly: true },
+  { to: '/logs', icon: ScrollText, label: 'Logs', adminOnly: false },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ userRole = 'operator' }: { userRole?: string }) {
   const { isExpanded, isMobileOpen, isHovered, toggleMobileSidebar, setIsHovered } = useSidebar();
   const location = useLocation();
   const isActive = useCallback((path: string) => location.pathname === path, [location.pathname]);
+  const isAdmin = userRole === 'admin';
+  const visibleItems = mainItems.filter(item => !item.adminOnly || isAdmin);
 
   const sidebarWidth = isExpanded || isHovered || isMobileOpen ? 'w-[290px]' : 'w-[90px]';
 
