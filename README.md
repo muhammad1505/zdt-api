@@ -260,6 +260,31 @@ Semua akses via **1 port: 2000**. Bisa lewat VPN atau LAN.
 | `http://ip:2000/admin/` | **Admin Dashboard** | Users, API keys, VPN, services, system config, dependencies. Login via React SPA. |
 | `http://ip:2000/api/...` | **API Endpoint** | Mobile app & Telegram bot. Auth via X-API-Key (mobile) atau Bearer token (admin). |
 
+## Redis Setup (Optional)
+
+Redis provides centralized rate limiting for multi-worker Gunicorn setups.
+Without Redis, each worker has its own in-memory rate limit counter
+(effective limit becomes `max_requests * workers`).
+
+```bash
+# 1. Install Redis (included in install.sh)
+sudo apt install -y redis-server redis-tools
+
+# 2. Start & enable on boot
+sudo systemctl enable --now redis-server
+
+# 3. Verify
+redis-cli ping  # Should return PONG
+
+# 4. Add to config.env
+REDIS_URL=redis://localhost:6379/0
+
+# 5. Restart API server
+sudo systemctl restart zdt-api
+```
+
+Rate limiting is handled by `middleware.py`. Default: 240 requests/minute per IP.
+
 ## Architecture
 
 ```
@@ -290,6 +315,9 @@ zdt-api/
 │       ├── context/       # React contexts
 │       ├── pages/         # Dashboard, Files, Settings, Tools, etc.
 │       └── types/         # TypeScript types
+├── static/                # ZDT Web Console static files
+│   ├── dashboard.css      #   CSS: Warm Console design system (v5.0)
+│   └── dashboard.js       #   JS: Auth, SSE, tools, scheduler, logs, themes
 ├── templates/             # ZDT Web Console (serve di /) — dashboard.html
 ├── systemd/               # systemd unit files
 ├── zdt-modules/           # Shared shell + python modules

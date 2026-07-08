@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useSidebar } from '../context/SidebarContext';
 import api, { getProfile, updateProfile, changePassword } from '../api/client';
@@ -127,6 +127,30 @@ export default function AppHeader({ username, onLogout }: Props) {
     return () => document.removeEventListener('mousedown', handle);
   }, []);
 
+  // Notification sound using Web Audio API (no external file needed)
+  const playNotifSound = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 660;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+    } catch { /* Audio not supported */ }
+  }, []);
+
+  // Request desktop notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   // Real-time notification polling every 15 seconds
   // Keep notifOpenRef in sync with notifOpen state for the interval closure
   useEffect(() => {
@@ -147,6 +171,17 @@ export default function AppHeader({ username, onLogout }: Props) {
           const maxId = Math.max(...important.map(n => n.id));
           if (lastNotifId.current > 0 && maxId > lastNotifId.current && !notifOpenRef.current) {
             setUnreadCount(prev => prev + 1);
+            // Play sound + desktop notification for new important events
+            playNotifSound();
+            const newNotif = important.find(n => n.id === maxId) || important[0];
+            if (newNotif && 'Notification' in window && Notification.permission === 'granted') {
+              const isError = newNotif.status_code >= 400;
+              new Notification('ZDT API' + (isError ? ' ⚠️' : ''), {
+                body: eventLabel(newNotif),
+                icon: '/favicon.svg',
+                tag: 'zdt-notif',
+              });
+            }
           }
           lastNotifId.current = maxId;
         }
@@ -159,7 +194,7 @@ export default function AppHeader({ username, onLogout }: Props) {
     // Poll every 15 seconds
     const interval = setInterval(fetchNotifs, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [playNotifSound]);
 
   // Reset unread count when notification panel opens
   useEffect(() => {
