@@ -108,6 +108,9 @@ export default function AppHeader({ username, onLogout }: Props) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState<Activity[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const lastNotifId = useRef<number>(0);
+  const notifOpenRef = useRef(false);
   const [profileData, setProfileData] = useState<{ username: string; label: string; role: string } | null>(null);
   const [editLabel, setEditLabel] = useState('');
   const [oldPass, setOldPass] = useState('');
@@ -124,15 +127,50 @@ export default function AppHeader({ username, onLogout }: Props) {
     return () => document.removeEventListener('mousedown', handle);
   }, []);
 
+  // Real-time notification polling every 15 seconds
+  // Keep notifOpenRef in sync with notifOpen state for the interval closure
   useEffect(() => {
-    const fetch = async () => {
+    notifOpenRef.current = notifOpen;
+  }, [notifOpen]);
+
+  // Real-time notification polling every 15 seconds
+  useEffect(() => {
+    const fetchNotifs = async () => {
       try {
         const res = await api.get('/api/admin/activity?limit=20');
-        const items = res.data.logs || res.data.activities || [];
-        setNotifications(items.filter(isImportant).slice(0, 10));
+        const items: Activity[] = res.data.logs || res.data.activities || [];
+        const important = items.filter(isImportant).slice(0, 10);
+        setNotifications(important);
+
+        // Track unread count since last seen — use ref to avoid stale closure
+        if (important.length > 0) {
+          const maxId = Math.max(...important.map(n => n.id));
+          if (lastNotifId.current > 0 && maxId > lastNotifId.current && !notifOpenRef.current) {
+            setUnreadCount(prev => prev + 1);
+          }
+          lastNotifId.current = maxId;
+        }
       } catch {}
     };
-    if (notifOpen) fetch();
+
+    // Initial fetch
+    fetchNotifs();
+
+    // Poll every 15 seconds
+    const interval = setInterval(fetchNotifs, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Reset unread count when notification panel opens
+  useEffect(() => {
+    if (notifOpen) {
+      setUnreadCount(0);
+      // Refresh notifications when opening
+      api.get('/api/admin/activity?limit=20').then(res => {
+        const items = res.data.logs || res.data.activities || [];
+        setNotifications(items.filter(isImportant).slice(0, 10));
+      }).catch(() => {});
+    }
   }, [notifOpen]);
 
   const handleToggle = () => {
@@ -206,9 +244,13 @@ export default function AppHeader({ username, onLogout }: Props) {
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
-              {notifications.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-error-500 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-gray-900">
-                  {notifications.length > 9 ? '9+' : notifications.length}
+              {(unreadCount > 0 || notifications.length > 0) && (
+                <span className={`absolute -top-1 -right-1 rounded-full flex items-center justify-center ring-2 ring-white dark:ring-gray-900 ${
+                  unreadCount > 0
+                    ? 'w-5 h-5 bg-error-500 text-white text-[9px] font-bold'
+                    : 'w-3 h-3 bg-gray-400'
+                }`}>
+                  {unreadCount > 0 ? (unreadCount > 9 ? '9+' : unreadCount) : ''}
                 </span>
               )}
             </button>
