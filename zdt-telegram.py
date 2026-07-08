@@ -542,14 +542,30 @@ Chat: {history_context}"""
 
                             if action.startswith("gas download audio"):
                                 url = action.replace("gas download audio", "").strip()
+                                # Sanitasi URL: hanya izinkan http/https URLs yang valid
+                                import re
+                                urls = re.findall(r'https?://[^\s]+', url)
+                                if not urls:
+                                    bot.reply_to(message, "❌ URL tidak valid untuk download audio.")
+                                    return
+                                url = urls[0]
                                 sent_msg = bot.reply_to(message, f"⏳ <b>Sedang Mendownload Audio...</b>\n📍 <code>Server</code> memproses link.", parse_mode="HTML")
                                 run_bg_task(["--download-audio", url], "Audio berhasil di-download!", sent_msg)
                             elif action.startswith("gas download video"):
                                 url = action.replace("gas download video", "").strip()
+                                # Sanitasi URL: hanya izinkan http/https URLs yang valid
+                                import re
+                                urls = re.findall(r'https?://[^\s]+', url)
+                                if not urls:
+                                    bot.reply_to(message, "❌ URL tidak valid untuk download video.")
+                                    return
+                                url = urls[0]
                                 sent_msg = bot.reply_to(message, f"⏳ <b>Sedang Mendownload Video...</b>\n📍 <code>Server</code> memproses link.", parse_mode="HTML")
                                 run_bg_task(["--download-video", url], "Video berhasil di-download!", sent_msg)
                             elif action.startswith("cari youtube"):
                                 query = action.replace("cari youtube", "").strip()
+                                # Batasi panjang query untuk cegah abuse
+                                query = query[:500]
                                 import html
                                 bot.reply_to(message, f"🔍 <b>Mencari di YouTube...</b>\nKata kunci: <code>{html.escape(query)}</code>", parse_mode="HTML")
                                     

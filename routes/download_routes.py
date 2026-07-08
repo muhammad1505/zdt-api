@@ -184,8 +184,8 @@ def cancel_download(download_id):
                 'message': 'Download not found'
             }), 404
 
+        # Cancel: set status to cancelled (keep record for history)
         update_download_status(download_id, 'cancelled')
-        delete_download(download_id)
 
         return jsonify({
             'success': True,
@@ -219,7 +219,7 @@ def retry_download(download_id):
             }), 400
 
         update_download_status(download_id, 'queued', error_message=None)
-        _spawn_download_process(download['url'], download.get('format', 'auto'))
+        _spawn_download_process(download['url'], download.get('format') or 'auto')
 
         return jsonify({
             'success': True,

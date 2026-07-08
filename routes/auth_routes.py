@@ -241,6 +241,8 @@ def update_password():
         # Sync with config.env if it's the default web user
         if user['username'] == config.get_web_user():
             config.update_config('ZDT_WEB_PASS', new_password)
+            # Reload config so Basic Auth fallback picks up the new password immediately
+            config._load_config()
             
         return jsonify({
             'success': True,

@@ -1,7 +1,9 @@
 import os
 import sys
+import threading
 
 CONFIG_FILE = None
+_config_lock = threading.Lock()
 
 class ZdtConfig:
     """Read configuration from config.env and zdt-modules."""
@@ -114,23 +116,24 @@ class ZdtConfig:
         }
     
     def update_config(self, key, value):
-        """Update a config value and write to file."""
+        """Update a config value and write to file. Thread-safe."""
         self._config[key] = value
-        lines = []
-        found = False
-        if os.path.exists(self.config_path):
-            with open(self.config_path) as f:
-                for line in f:
-                    if line.startswith(f'{key}='):
-                        lines.append(f'{key}={value}\n')
-                        found = True
-                    else:
-                        lines.append(line)
-        if not found:
-            lines.append(f'{key}={value}\n')
-        with open(self.config_path, 'w') as f:
-            f.writelines(lines)
-        os.chmod(self.config_path, 0o600)
+        with _config_lock:
+            lines = []
+            found = False
+            if os.path.exists(self.config_path):
+                with open(self.config_path) as f:
+                    for line in f:
+                        if line.startswith(f'{key}='):
+                            lines.append(f'{key}={value}\n')
+                            found = True
+                        else:
+                            lines.append(line)
+            if not found:
+                lines.append(f'{key}={value}\n')
+            with open(self.config_path, 'w') as f:
+                f.writelines(lines)
+            os.chmod(self.config_path, 0o600)
 
 
 config = ZdtConfig()

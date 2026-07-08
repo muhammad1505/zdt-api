@@ -13,14 +13,8 @@ from collections import defaultdict
 from flask import Flask, request, render_template, render_template_string, jsonify, Response
 from flask_cors import CORS
 from functools import wraps
-try:
-    import mutagen
-    from mutagen.easyid3 import EasyID3
-    from mutagen.mp4 import MP4, MP4Cover
-    from mutagen.flac import FLAC, Picture
-except ImportError:
-    pass
-
+# Mutagen akan di-import di endpoint yang membutuhkan (lazy import)
+# untuk memberikan error message yang jelas jika belum terinstall
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Load shared path module (zdt-modules/zdt_paths.py)
@@ -912,7 +906,7 @@ def get_logs():
 # Prevent file descriptor exhaustion from infinite reconnect loops
 _SSE_MAX_CONNECTIONS = 50
 _sse_active_count = 0
-_sse_active_lock = threading.Lock()
+_sse_active_lock = threading.RLock()
 
 @app.route("/api/logs/stream", methods=["GET"])
 @requires_auth

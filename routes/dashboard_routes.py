@@ -4,6 +4,7 @@ import subprocess
 
 from auth import requires_auth
 from config import config
+from database import get_downloads
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
@@ -17,19 +18,15 @@ def get_stats():
         per_page = request.args.get('per_page', 20, type=int)
         page = max(1, page)
         per_page = max(5, min(100, per_page))
-        offset = (page - 1) * per_page
-        
-        db_path = os.path.join(config.modules_dir, 'zdt_db.py')
-        if os.path.exists(db_path):
-            result = subprocess.run(
-                ['python3', db_path, config.config_path, 'get_stats', str(per_page), str(offset)],
-                capture_output=True, text=True, timeout=10
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                import json
-                return jsonify(json.loads(result.stdout))
-        
-        return jsonify({'downloads': [], 'total': 0, 'page': page, 'per_page': per_page})
+
+        downloads_list, total = get_downloads(page, per_page, 'all')
+
+        return jsonify({
+            'downloads': downloads_list,
+            'total': total,
+            'page': page,
+            'per_page': per_page
+        })
     except Exception as e:
         return jsonify({'error': 'Gagal memuat statistik', 'message': str(e)}), 500
 

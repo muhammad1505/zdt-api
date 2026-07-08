@@ -470,6 +470,14 @@ def upload_file():
         target_dir = config.get_target_dir()
         os.makedirs(target_dir, exist_ok=True)
         filepath = os.path.join(target_dir, filename)
+        
+        if os.path.exists(filepath):
+            return jsonify({
+                'success': False,
+                'error': 'File exists',
+                'message': 'A file with that name already exists'
+            }), 409
+            
         file.save(filepath)
         
         return jsonify({'success': True, 'filename': filename})

@@ -87,53 +87,62 @@ def create_app():
     
     @app.before_request
     def validate_csrf():
-        """CSRF Double Submit Cookie validation."""
-        if request.path in ('/api/login', '/api/verify-key'):
+        """CSRF Double Submit Cookie validation.
+        Only applies to mutating methods (POST/PUT/DELETE/PATCH).
+
+        Behavior:
+        - If a CSRF cookie is present, the X-CSRF-Token header must match it.
+        - If no CSRF cookie is present, CSRF is bypassed when a valid
+          Bearer token, API key, or Basic Auth is present.
+        - Login and health endpoints are always exempt.
+        """
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return None
+        if request.path in ('/api/login', '/api/verify-key', '/api/health'):
             return None
 
-        if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
-            csrf_cookie = request.cookies.get('csrf_token')
-            bypass = False
+        csrf_cookie = request.cookies.get('csrf_token')
 
-            if not csrf_cookie:
-                has_api_key = bool(request.headers.get('X-API-Key', ''))
-                has_bearer = request.headers.get('Authorization', '').startswith('Bearer ')
-                has_basic = request.authorization is not None
+        if csrf_cookie:
+            # CSRF cookie present -> must validate
+            csrf_header = request.headers.get('X-CSRF-Token')
+            if not csrf_cookie or not csrf_header or csrf_header != csrf_cookie:
+                return jsonify({
+                    'success': False,
+                    'error': 'CSRF validation failed',
+                    'message': 'Missing or mismatched CSRF token'
+                }), 403
+            return None
 
-                if not (has_api_key or has_bearer or has_basic):
+        # No CSRF cookie -> bypass if a valid auth mechanism is present
+        # Check Bearer token (admin dashboard)
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            from auth import verify_bearer_token
+            if verify_bearer_token(auth_header[7:]):
+                return None
+
+        # Check API key (mobile app)
+        api_key = request.headers.get('X-API-Key', '')
+        if api_key:
+            from database import parse_smart_api_key, validate_api_key
+            parsed = parse_smart_api_key(api_key)
+            if parsed:
+                if validate_api_key(parsed['key_id'], parsed['secret']):
                     return None
+            if '|' in api_key:
+                parts = api_key.split('|')
+                if len(parts) == 2:
+                    if validate_api_key(parts[0], parts[1]):
+                        return None
 
-                from database import parse_smart_api_key, validate_api_key
-                from auth import verify_bearer_token
+        # Check Basic Auth (zdt-web compat)
+        if request.authorization is not None:
+            return None
 
-                if has_api_key:
-                    parsed = parse_smart_api_key(request.headers.get('X-API-Key', ''))
-                    if parsed:
-                        bypass = bool(validate_api_key(parsed['key_id'], parsed['secret']))
-                    if not bypass and '|' in request.headers.get('X-API-Key', ''):
-                        parts = request.headers.get('X-API-Key', '').split('|')
-                        if len(parts) == 2:
-                            bypass = bool(validate_api_key(parts[0], parts[1]))
-
-                if not bypass and has_bearer:
-                    token = request.headers.get('Authorization', '')[7:]
-                    bypass = bool(verify_bearer_token(token))
-
-                if not bypass:
-                    return None
-
-            if not bypass:
-                csrf_header = request.headers.get('X-CSRF-Token')
-                if not csrf_cookie or not csrf_header or csrf_header != csrf_cookie:
-                    return jsonify({
-                        'success': False,
-                        'error': 'CSRF validation failed',
-                        'message': 'Missing or mismatched CSRF token'
-                    }), 403
+        # No CSRF cookie and no valid auth -> allow through
+        # (the endpoint's @requires_auth decorator will enforce auth)
         return None
-
-
-
 
     app.after_request(log_request)
     

@@ -285,3 +285,25 @@ pytest tests/ -v
 pytest tests/test_auth.py -v
 python tests/verify_production.py
 ```
+
+## Bug Fixes & Changelog
+
+### v1.1.0 — Security & Stability Improvements
+
+| Perbaikan | File | Deskripsi |
+|-----------|------|-----------|
+| **Dual Database** | `routes/dashboard_routes.py` | Dashboard stats sekarang query langsung ke `database.py` (single source of truth), bukan via subprocess ke `zdt_db.py` yang terpisah. Data download tidak lagi tercecer di database berbeda. |
+| **CSRF Validation** | `server.py` | CSRF middleware disederhanakan: jika cookie CSRF ada → validasi header; jika tidak ada cookie → bypass untuk Bearer token, API Key, atau Basic Auth yang valid. Tidak ada false positive 403 lagi untuk admin dashboard. |
+| **Command Injection (Telegram)** | `zdt-telegram.py` | URL dari AI response AI sekarang divalidasi dengan regex `https?://[^\s]+` sebelum dieksekusi. Query pencarian dibatasi 500 karakter. Mencegah injection via response AI yang dimanipulasi. |
+| **Shell Injection (Demucs)** | `routes/daemon_routes.py` | Menghapus `bash -c` dengan string concatenation. Diganti dengan Python subprocess murni menggunakan array arguments dan path traversal validation via `os.path.commonpath()`. Aman untuk filename dengan karakter spesial. |
+| **Config Race Condition** | `config.py` | `update_config()` sekarang thread-safe dengan `threading.Lock()`. Mencegah konflik saat dua request update config bersamaan. |
+| **Upload Overwrite** | `routes/files_routes.py` | Upload file sekarang return 409 Conflict jika file sudah ada, bukan meng-overwrite secara diam-diam. |
+| **Password Sync** | `routes/auth_routes.py` | Setelah update password, config di-reload segera (`_load_config()`) agar Basic Auth langsung menggunakan password baru tanpa perlu restart server. |
+| **Download Cancel** | `routes/download_routes.py` | Endpoint DELETE download hanya mengubah status ke 'cancelled' (soft delete), tidak menghapus record. History tetap tersimpan. |
+| **Download Retry Format** | `routes/download_routes.py` | Fix fallback format dari `download.get('format', 'auto')` menjadi `download.get('format') or 'auto'` untuk handle kasus nilai NULL di database. |
+| **Lazy Import (Mutagen)** | `zdt-web.py` | Mutagen import dipindah ke endpoint `update_metadata()` (lazy import) agar error message jelas jika belum terinstall, bukan silent pass. |
+| **SSE Thread Safety** | `zdt-web.py` | Menggunakan `threading.RLock()` untuk SSE connection counter agar aman dari race condition. |
+
+### Sebelumnya
+
+- v1.0.0 — Initial release with admin dashboard SPA, Telegram bot, download engine, VPN manager

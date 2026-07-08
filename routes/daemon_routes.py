@@ -348,35 +348,94 @@ def server_tools():
                 name_no_ext = os.path.splitext(os.path.basename(file_path))[0]
                 ext = os.path.splitext(file_path)[1].lower()
                 base_dir = os.path.dirname(file_path)
-                shell_cmd = (
-                    f'ext="{ext}"; '
-                    f'ffmpeg_opts="-b:a 192k"; '
-                    f'case "$ext" in .m4a) ffmpeg_opts="-c:a aac -b:a 192k";; '
-                    f'.flac) ffmpeg_opts="-c:a flac";; '
-                    f'.ogg) ffmpeg_opts="-c:a libvorbis -q:a 3";; '
-                    f'.opus) ffmpeg_opts="-c:a libopus -b:a 128k";; '
-                    f'.wav) ffmpeg_opts="-c:a pcm_s16le";; esac; '
-                    f'"{demucs_bin}" --two-stems=vocals -o "{base_dir}" "{file_path}" 2>&1 && '
-                    f'outdir=$(find "{base_dir}" -maxdepth 4 -type d -name "{name_no_ext}" 2>/dev/null | head -1); '
-                    f'if [ ! -d "$outdir" ]; then outdir="{base_dir}/htdemucs/{name_no_ext}"; fi; '
-                    f'if [ -d "$outdir" ]; then '
-                    f'for f in "$outdir"/*.wav; do '
-                    f'bn=$(basename "$f" .wav); '
-                    f'case "$bn" in '
-                    f'vocals) stems="vokal";; '
-                    f'no_vocals) stems="novokal";; '
-                    f'*) stems="$bn";; esac; '
-                    f'ffmpeg -y -i "$f" $ffmpeg_opts "{base_dir}/${name_no_ext}_${{stems}}{ext}" -loglevel error && rm "$f"; '
-                    f'done; rmdir "$outdir" 2>/dev/null; fi && '
-                    f'rm -rf "{base_dir}/htdemucs" 2>/dev/null; '
-                    f'echo "Done: {name_no_ext}_vokal{ext} + {name_no_ext}_novokal{ext}"'
-                )
-                with open(log_path, 'w') as log_file:
-                    subprocess.Popen(
-                        ['bash', '-c', shell_cmd],
-                        stdout=log_file, stderr=subprocess.STDOUT,
-                        start_new_session=True
-                    )
+
+                def _run_demucs_safe():
+                    """Run Demucs safely without shell injection risk."""
+                    # Path already validated via resolve_path() using os.path.commonpath()
+                    # Double-check: ensure file is within target directory
+                    real_target = os.path.realpath(target_dir)
+                    real_file = os.path.realpath(file_path)
+                    if os.path.commonpath([real_target, real_file]) != real_target:
+                        with open(log_path, 'a') as logf:
+                            logf.write(f'Error: Path traversal detected: {file_path}\n')
+                        return
+
+                    # Step 1: Run demucs
+                    import subprocess as _sp
+                    demucs_args = [demucs_bin, '--two-stems=vocals', '-o', base_dir, file_path]
+                    try:
+                        _sp.run(demucs_args, capture_output=True, text=True, timeout=1800)
+                    except _sp.TimeoutExpired:
+                        with open(log_path, 'a') as logf:
+                            logf.write(f'Demucs timeout for: {name_no_ext}\n')
+                        return
+                    except Exception as e:
+                        with open(log_path, 'a') as logf:
+                            logf.write(f'Demucs error for {name_no_ext}: {e}\n')
+                        return
+
+                    # Step 2: Find output directory
+                    import glob as _glob
+                    outdir = None
+                    for d in [os.path.join(base_dir, 'htdemucs', name_no_ext),
+                              os.path.join(base_dir, name_no_ext)]:
+                        if os.path.isdir(d):
+                            outdir = d
+                            break
+                    if not outdir:
+                        # Search recursively
+                        for root, dirs, _ in os.walk(base_dir):
+                            for d in dirs:
+                                if d == name_no_ext:
+                                    outdir = os.path.join(root, d)
+                                    break
+                            if outdir:
+                                break
+                    if not outdir:
+                        with open(log_path, 'a') as logf:
+                            logf.write(f'Demucs output dir not found for: {name_no_ext}\n')
+                        return
+
+                    # Step 3: Convert WAV stems to original format
+                    stem_map = {'vocals': 'vokal', 'no_vocals': 'novokal'}
+                    ffmpeg_opts_map = {
+                        '.m4a': ['-c:a', 'aac', '-b:a', '192k'],
+                        '.flac': ['-c:a', 'flac'],
+                        '.ogg': ['-c:a', 'libvorbis', '-q:a', '3'],
+                        '.opus': ['-c:a', 'libopus', '-b:a', '128k'],
+                        '.wav': ['-c:a', 'pcm_s16le'],
+                    }
+                    ffmpeg_opts = ffmpeg_opts_map.get(ext, ['-b:a', '192k'])
+
+                    wav_files = _glob.glob(os.path.join(outdir, '*.wav'))
+                    for wav_path in wav_files:
+                        stem_name = os.path.splitext(os.path.basename(wav_path))[0]
+                        stem_label = stem_map.get(stem_name, stem_name)
+                        output_path = os.path.join(base_dir, f'{name_no_ext}_{stem_label}{ext}')
+                        ffmpeg_args = ['ffmpeg', '-y', '-i', wav_path] + ffmpeg_opts + [output_path, '-loglevel', 'error']
+                        try:
+                            _sp.run(ffmpeg_args, capture_output=True, text=True, timeout=300)
+                            if os.path.exists(output_path):
+                                os.remove(wav_path)
+                        except Exception as e:
+                            with open(log_path, 'a') as logf:
+                                logf.write(f'FFmpeg conversion error for {stem_name}: {e}\n')
+
+                    # Step 4: Cleanup
+                    try:
+                        shutil.rmtree(outdir)
+                    except Exception:
+                        pass
+                    try:
+                        shutil.rmtree(os.path.join(base_dir, 'htdemucs'))
+                    except Exception:
+                        pass
+
+                    with open(log_path, 'a') as logf:
+                        logf.write(f'Done: {name_no_ext}_vokal{ext} + {name_no_ext}_novokal{ext}\n')
+
+                t = threading.Thread(target=_run_demucs_safe, daemon=True)
+                t.start()
 
             if filename:
                 full_path = os.path.join(work_dir, filename)

@@ -9,6 +9,7 @@ from middleware import sse_connect, sse_disconnect
 logs_bp = Blueprint('logs', __name__)
 
 LOG_PATH = '/tmp/zdt_api_task.log'
+WEB_LOG_PATH = '/tmp/zdt_web_task.log'
 
 
 def is_task_running():
