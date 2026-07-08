@@ -111,6 +111,7 @@ File: `config.env` di project root.
 | `ZDT_API_PORT` | `2000` | API server port |
 | `ZDT_API_HOST` | `0.0.0.0` | Bind address |
 | `ZDT_API_DEBUG` | `false` | Flask debug mode |
+| `REDIS_URL` | `""` | Redis connection URL untuk rate limiting terpusat (multi-worker). Contoh: `redis://localhost:6379/0`. Jika kosong, pakai in-memory fallback. |
 
 Telegram token juga bisa disimpan di `~/.config/zdt/telegram_token.txt`.  
 API keys AI: `~/.config/zdt/gemini_key` atau `~/.config/zdt/openrouter_key`.
