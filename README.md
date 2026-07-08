@@ -80,11 +80,13 @@ sudo systemctl enable --now zdt-scheduler.timer
 
 | Service | Description | Port |
 |---------|-------------|------|
-| `zdt-api.service` | API server (gunicorn) | 2000 |
+| `zdt-api.service` | API server (gunicorn) — **aplikasi unified** | 2000 |
 | `zdt-telegram.service` | Telegram bot (polling) | — |
 | `zdt-watch.service` | File system watcher | — |
 | `zdt-scheduler.service` | Periodic playlist sync | — |
 | `zdt-scheduler.timer` | Trigger scheduler every hour | — |
+
+> **Legacy `zdt-web` service:** Endpoint `zdt-web.py` sudah di-merge ke `server.py`. File `zdt-web.py` masih ada sebagai wrapper 24 baris yang import dari `server.py`. Jika masih ada systemd service `zdt-web.service`, ia tetap jalan di port 5000 dengan aplikasi yang sama persis. Untuk produksi baru, cukup gunakan `zdt-api.service` (port 2000).
 
 ## Configuration
 
@@ -167,6 +169,10 @@ Format response AI (JSON):
 - `GET /api/downloads/<id>` — Download detail + progress
 - `DELETE /api/downloads/<id>` — Cancel download
 - `POST /api/downloads/retry/<id>` — Retry failed
+- `DELETE /api/downloads/history` — Clear all history
+- `POST /api/spotify-sync` — Trigger Spotify playlist sync
+- `POST /api/playlist/items` — Fetch playlist contents via yt-dlp
+- `POST /api/download-selected` — Batch download multiple URLs
 
 ### Admin (Bearer Token)
 - `GET /api/admin/dashboard` — System overview stats
@@ -195,11 +201,37 @@ Format response AI (JSON):
 - `GET /api/admin/vpn/log` — Connection log
 - `POST /api/admin/vpn/auto-reconnect` — Toggle auto-reconnect
 
+### Files
+- `POST /api/metadata` — Edit audio file metadata (title/artist) — MP3/M4A/FLAC
+
 ### Daemon & Tools
 - `POST /api/daemon` — Watch/scheduler control
-- `POST /api/tools` — Run tools (clean, compress, playlist, sync_lyrics, demucs)
-- `GET /api/logs` — Recent logs
+- `POST /api/tools` — Run tools (clean, compress, playlist, sync_lyrics, demucs, delete_all)
+- `GET /api/scheduler/status` — Check scheduler daemon status
+- `GET /api/scheduler/playlists` — Get scheduled playlists
+- `POST /api/scheduler/playlists` — Save playlist schedule
+
+### Logs
+- `GET /api/logs` — Recent task logs
 - `GET /api/logs/stream` — Live log stream (SSE)
+- `POST /api/logs/clear` — Clear task log file
+- `GET /api/system/logs` — System logs (journalctl/syslog)
+
+### Settings & Info
+- `GET /api/settings` — All settings grouped
+- `POST /api/settings` — Batch update settings
+- `GET /api/server/info` — Version, tools, IP, storage info
+- `GET /api/notify/config` — Telegram notification config
+- `POST /api/notify/config` — Update notification config
+- `POST /api/notify/test` — Send test notification
+
+### Dashboard
+- `GET /api/stats` — Download statistics
+- `GET /api/status` — Server health
+- `POST /api/stats/reset` — Reset download statistics
+
+### Update
+- `GET /api/update-check` — Check GitHub for newer version
 
 ### Auth Methods
 
@@ -219,25 +251,25 @@ Authorization: Bearer <jwt-token>
 
 ```
 zdt-api/
-├── server.py              # Flask app entrypoint
+├── server.py              # ✨ Flask app entrypoint — UNIFIED (semua endpoint)
 ├── auth.py                # JWT, API Key auth, password hashing
 ├── config.py              # Config reader (config.env)
 ├── database.py            # SQLite init + CRUD
-├── middleware.py           # CORS, security headers, rate limiting
+├── middleware.py           # CORS, security headers, rate limiting (Redis + in-memory)
 ├── routes/                # Flask blueprints
-│   ├── admin_routes.py    # Admin: dashboard, services, users, keys, system
+│   ├── admin_routes.py    # Admin: dashboard, services, users, keys, system, update-check
 │   ├── auth_routes.py     # Login, verify key
-│   ├── daemon_routes.py   # Demucs, compress, sync, tools
-│   ├── dashboard_routes.py# Dashboard stats
-│   ├── download_routes.py # Download queue
-│   ├── files_routes.py    # File browser, stream, upload
-│   ├── logs_routes.py     # Log viewer, SSE stream
-│   ├── settings_routes.py # All settings CRUD
+│   ├── daemon_routes.py   # Demucs, compress, sync, tools, scheduler status/playlists
+│   ├── dashboard_routes.py# Dashboard stats + stats reset
+│   ├── download_routes.py # Download queue, spotify-sync, playlist/items, download-selected
+│   ├── files_routes.py    # File browser, stream, upload, metadata editor
+│   ├── logs_routes.py     # Log viewer, SSE stream, system logs
+│   ├── settings_routes.py # All settings CRUD, notify config, server info
 │   └── vpn_routes.py      # VPN connect/disconnect/status
 ├── zdt-telegram.py        # Telegram bot daemon
 ├── zdt-scheduler.py       # Playlist sync scheduler
 ├── zdt-watch.py           # File watcher daemon
-├── zdt-web.py             # Legacy Flask web dashboard
+├── zdt-web.py             # ⏳ Legacy wrapper (24 baris, import dari server.py)
 ├── admin-dashboard/       # React + Tailwind SPA
 │   └── src/
 │       ├── api/           # API client (axios)
@@ -250,6 +282,8 @@ zdt-api/
 ├── templates/             # Legacy Flask templates
 └── tests/                 # pytest tests
 ```
+
+> **Dual server merge:** Sebelumnya ada 2 server Flask terpisah (`server.py` port 2000 dan `zdt-web.py` port 5000) dengan endpoint duplikat. Semua endpoint unik dari `zdt-web.py` sudah dipindahkan ke route blueprint `server.py`, dan `zdt-web.py` sekarang tinggal wrapper 24 baris yang import `create_app()` dari `server.py`. Kedua port serve aplikasi identik.
 
 ## Docker
 
@@ -272,7 +306,9 @@ docker run -d \
 - Filename sanitization via `werkzeug.utils.secure_filename`
 - Subprocess commands validated against shell metacharacters
 - VPN credentials masked in API responses
-- In-memory rate limiting
+- In-memory rate limiting with optional Redis backend (redis://... in config.env → `REDIS_URL`)
+  - Multi-worker Gunicorn: Redis menyediakan rate limit terpusat antar worker
+  - Fallback otomatis ke in-memory jika Redis tidak tersedia
 - Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection)
 - Request ID tracking (X-Request-ID)
 - Graceful shutdown on SIGTERM/SIGINT
@@ -288,7 +324,18 @@ python tests/verify_production.py
 
 ## Bug Fixes & Changelog
 
+### v1.2.0 — Dual Server Merge + Redis Rate Limiter
+
+| Perubahan | File | Deskripsi |
+|-----------|------|-----------|
+| **Dual Server Merge** | Semua route files | Semua endpoint unik dari `zdt-web.py` (spotify-sync, playlist/items, download-selected, metadata, scheduler, notify, system/logs, stats/reset, update-check, dll.) dipindahkan ke route blueprint `server.py`. `zdt-web.py` sekarang menjadi wrapper 24 baris. |
+| **Redis Rate Limiter** | `middleware.py` | Optional Redis backend dengan fallback in-memory. Aktif jika `REDIS_URL` diisi di config.env. |
+
 ### v1.1.0 — Security & Stability Improvements
+
+| Perbaikan | File | Deskripsi |
+|-----------|------|-----------|
+| **Dual Database** | `routes/dashboard_routes.py` | Dashboard stats sekarang query langsung ke `database.py` (single source of truth), bukan via subprocess ke `zdt_db.py` yang terpisah. Data download tidak lagi tercecer di database berbeda. |
 
 | Perbaikan | File | Deskripsi |
 |-----------|------|-----------|
