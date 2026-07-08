@@ -16,7 +16,11 @@ dashboard_bp = Blueprint('dashboard', __name__)
 @dashboard_bp.route('/api/stats', methods=['GET'])
 @requires_auth
 def get_stats():
-    """Get download statistics from database."""
+    """Get download statistics from database.
+    Returns format compatible with ZDT Web Console template:
+    - total_count, total_size_bytes, sources breakdown,
+    - recent downloads list, pagination info.
+    """
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
@@ -25,9 +29,59 @@ def get_stats():
 
         downloads_list, total = get_downloads(page, per_page, 'all')
 
+        # Compute aggregate stats
+        total_size_bytes = sum(
+            d.get('file_size', 0) or 0
+            for d in downloads_list
+            if d.get('status') == 'completed'
+        )
+
+        # Source breakdown by URL pattern
+        sources = {'spotify': 0, 'youtube': 0, 'other': 0}
+        for d in downloads_list:
+            url = (d.get('url') or '').lower()
+            if 'spotify.com' in url:
+                sources['spotify'] += 1
+            elif 'youtube.com' in url or 'youtu.be' in url:
+                sources['youtube'] += 1
+            else:
+                sources['other'] += 1
+
+        # Recent downloads list for the UI table
+        recent = []
+        for d in downloads_list:
+            url_lower = (d.get('url') or '').lower()
+            if 'spotify.com' in url_lower:
+                source = 'spotify'
+            elif 'youtube.com' in url_lower or 'youtu.be' in url_lower:
+                source = 'youtube'
+            else:
+                source = 'other'
+
+            title = d.get('title') or ''
+            # Derive a display filename from title or URL
+            filename = title if title else (
+                d.get('url', '').rsplit('/', 1)[-1][:60] if d.get('url') else f'Download #{d["id"]}'
+            )
+
+            recent.append({
+                'filename': filename,
+                'source': source,
+                'size_bytes': d.get('file_size') or 0,
+                'timestamp': d.get('created_at') or '',
+                'status': d.get('status', ''),
+            })
+
+        total_pages = max(1, (total + per_page - 1) // per_page)
+
         return jsonify({
             'downloads': downloads_list,
             'total': total,
+            'total_count': total,
+            'total_size_bytes': total_size_bytes,
+            'sources': sources,
+            'recent': recent,
+            'total_pages': total_pages,
             'page': page,
             'per_page': per_page
         })
