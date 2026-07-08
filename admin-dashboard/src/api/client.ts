@@ -265,6 +265,23 @@ export const setAiKeys = async (data: Record<string, string>) => {
   return res.data;
 };
 
+// === SCHEDULER ===
+
+export const getSchedulerStatus = async () => {
+  const res = await api.get('/api/scheduler/status');
+  return res.data;
+};
+
+export const getSchedulerPlaylists = async () => {
+  const res = await api.get('/api/scheduler/playlists');
+  return res.data;
+};
+
+export const saveSchedulerPlaylist = async (data: Record<string, any>) => {
+  const res = await api.post('/api/scheduler/playlists', data);
+  return res.data;
+};
+
 // === DEPENDENCIES ===
 
 export const getDependencies = async () => {
