@@ -4,7 +4,8 @@ Standalone API server untuk ZDT Mobile app & Telegram Bot. Flask + SQLite backen
 
 ## Features
 
-- **Admin Dashboard SPA** — React + Tailwind SPA untuk manage server, file, download, users, API keys, VPN, settings
+- **ZDT Web Console** (`/`) — Template-based web console untuk download, Spotify sync, metadata editor, tools, logs, scheduler, notifikasi. Dengan login overlay + JWT Bearer token.
+- **Admin Dashboard** (`/admin/`) — React + Tailwind SPA untuk manage server, users, API keys, VPN, services, system config.
 - **Telegram Bot** — AI-powered assistant (Gemini/OpenRouter), search & download YouTube, pisah vokal, kompres media, dll.
 - **Download Engine** — yt-dlp backend untuk download audio/video dari YouTube, TikTok, Instagram, dll.
 - **File Management** — Browse, search, stream, download, upload, rename, delete file langsung dari browser
@@ -80,13 +81,14 @@ sudo systemctl enable --now zdt-scheduler.timer
 
 | Service | Description | Port |
 |---------|-------------|------|
-| `zdt-api.service` | API server (gunicorn) — **aplikasi unified** | 2000 |
+| `zdt-api.service` | API server (gunicorn) — **1 port untuk semua** | 2000 |
 | `zdt-telegram.service` | Telegram bot (polling) | — |
 | `zdt-watch.service` | File system watcher | — |
 | `zdt-scheduler.service` | Periodic playlist sync | — |
 | `zdt-scheduler.timer` | Trigger scheduler every hour | — |
 
-> **Legacy `zdt-web` service:** Endpoint `zdt-web.py` sudah di-merge ke `server.py`. File `zdt-web.py` masih ada sebagai wrapper 24 baris yang import dari `server.py`. Jika masih ada systemd service `zdt-web.service`, ia tetap jalan di port 5000 dengan aplikasi yang sama persis. Untuk produksi baru, cukup gunakan `zdt-api.service` (port 2000).
+> **Port 5000 (zdt-web) sudah deprecated.** Semua endpoint udah merger ke `server.py` port 2000.
+> `zdt-web.py` masih ada sebagai wrapper 24 baris untuk backward compatibility, tapi ga perlu diaktifkan.
 
 ## Configuration
 
@@ -247,11 +249,21 @@ POST /api/login  →  { "token": "jwt..." }
 Authorization: Bearer <jwt-token>
 ```
 
+## Access
+
+Semua akses via **1 port: 2000**. Bisa lewat VPN atau LAN.
+
+| URL | Untuk | Fitur |
+|-----|-------|-------|
+| `http://ip:2000/` | **ZDT Web Console** | Download, Spotify sync, metadata editor, tools, logs, scheduler, notifikasi. Login via overlay. |
+| `http://ip:2000/admin/` | **Admin Dashboard** | Users, API keys, VPN, services, system config, dependencies. Login via React SPA. |
+| `http://ip:2000/api/...` | **API Endpoint** | Mobile app & Telegram bot. Auth via X-API-Key (mobile) atau Bearer token (admin). |
+
 ## Architecture
 
 ```
 zdt-api/
-├── server.py              # ✨ Flask app entrypoint — UNIFIED (semua endpoint)
+├── server.py              # 🎯 Flask app entrypoint — serve ZDT Web (/) + Admin (/admin/) + API
 ├── auth.py                # JWT, API Key auth, password hashing
 ├── config.py              # Config reader (config.env)
 ├── database.py            # SQLite init + CRUD
@@ -269,21 +281,24 @@ zdt-api/
 ├── zdt-telegram.py        # Telegram bot daemon
 ├── zdt-scheduler.py       # Playlist sync scheduler
 ├── zdt-watch.py           # File watcher daemon
-├── zdt-web.py             # ⏳ Legacy wrapper (24 baris, import dari server.py)
-├── admin-dashboard/       # React + Tailwind SPA
+├── zdt-web.py             # ⏳ Legacy wrapper (24 baris, import dari server.py) — deprecated
+├── admin-dashboard/       # React + Tailwind SPA (serve di /admin/)
 │   └── src/
 │       ├── api/           # API client (axios)
 │       ├── components/    # Shared components (Layout, modals)
 │       ├── context/       # React contexts
 │       ├── pages/         # Dashboard, Files, Settings, Tools, etc.
 │       └── types/         # TypeScript types
+├── templates/             # ZDT Web Console (serve di /) — dashboard.html
 ├── systemd/               # systemd unit files
 ├── zdt-modules/           # Shared shell + python modules
-├── templates/             # Legacy Flask templates
 └── tests/                 # pytest tests
 ```
 
-> **Dual server merge:** Sebelumnya ada 2 server Flask terpisah (`server.py` port 2000 dan `zdt-web.py` port 5000) dengan endpoint duplikat. Semua endpoint unik dari `zdt-web.py` sudah dipindahkan ke route blueprint `server.py`, dan `zdt-web.py` sekarang tinggal wrapper 24 baris yang import `create_app()` dari `server.py`. Kedua port serve aplikasi identik.
+> **Single port architecture:** Semua endpoint dari `zdt-web.py` (dulu port 5000) dan `server.py` (port 2000) sudah merger ke 1 aplikasi di port 2000.
+> - `http://ip:2000/` → `templates/dashboard.html` (ZDT Web Console)
+> - `http://ip:2000/admin/` → `admin-dashboard/dist/` (React SPA)
+> - `http://ip:2000/api/...` → API endpoints dari route blueprints
 
 ## Docker
 
@@ -306,9 +321,11 @@ docker run -d \
 - Filename sanitization via `werkzeug.utils.secure_filename`
 - Subprocess commands validated against shell metacharacters
 - VPN credentials masked in API responses
-- In-memory rate limiting with optional Redis backend (redis://... in config.env → `REDIS_URL`)
+- In-memory rate limiting with optional Redis backend (`REDIS_URL` di config.env)
   - Multi-worker Gunicorn: Redis menyediakan rate limit terpusat antar worker
   - Fallback otomatis ke in-memory jika Redis tidak tersedia
+- **ZDT Web Console** di `/` dengan login overlay + JWT Bearer token stored di localStorage
+- **Admin Dashboard** di `/admin/` sebagai React SPA terpisah
 - Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection)
 - Request ID tracking (X-Request-ID)
 - Graceful shutdown on SIGTERM/SIGINT
@@ -324,6 +341,14 @@ python tests/verify_production.py
 
 ## Bug Fixes & Changelog
 
+### v1.3.0 — ZDT Web Console + Single Port Architecture
+
+| Perubahan | File | Deskripsi |
+|-----------|------|-----------|
+| **ZDT Web Login Overlay** | `templates/dashboard.html` | Login modal dengan username/password. JWT disimpan di localStorage. Semua fetch() auto-inject Bearer token. Logout button di sidebar. |
+| **Single Port Architecture** | `server.py` | `http://ip:2000/` → ZDT Web Console, `http://ip:2000/admin/` → Admin Dashboard (React SPA). 404 redirect ke `/`. |
+| **Port 5000 Deprecated** | README | `zdt-web.py` masih ada sebagai wrapper 24 baris, tapi semua via port 2000. |
+
 ### v1.2.0 — Dual Server Merge + Redis Rate Limiter
 
 | Perubahan | File | Deskripsi |
@@ -332,10 +357,6 @@ python tests/verify_production.py
 | **Redis Rate Limiter** | `middleware.py` | Optional Redis backend dengan fallback in-memory. Aktif jika `REDIS_URL` diisi di config.env. |
 
 ### v1.1.0 — Security & Stability Improvements
-
-| Perbaikan | File | Deskripsi |
-|-----------|------|-----------|
-| **Dual Database** | `routes/dashboard_routes.py` | Dashboard stats sekarang query langsung ke `database.py` (single source of truth), bukan via subprocess ke `zdt_db.py` yang terpisah. Data download tidak lagi tercecer di database berbeda. |
 
 | Perbaikan | File | Deskripsi |
 |-----------|------|-----------|
