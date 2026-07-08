@@ -177,7 +177,7 @@ def create_app():
         from flask import jsonify, request, redirect
         accept = request.headers.get('Accept', '')
         if 'text/html' in accept and not request.path.startswith('/api/'):
-            return redirect('/admin/')
+            return redirect('/')
         return jsonify({'error': 'Not found', 'message': 'Endpoint tidak ditemukan'}), 404
     
     @app.errorhandler(Exception)
@@ -201,9 +201,9 @@ def create_app():
             return send_from_directory(admin_dist, 'favicon.svg')
 
         @app.route('/')
-        def redirect_to_admin():
-            from flask import redirect
-            return redirect('/admin/')
+        def zdt_web_home():
+            from flask import render_template
+            return render_template('dashboard.html')
 
         @app.route('/admin/')
         @app.route('/admin/<path:path>')
@@ -295,8 +295,7 @@ if __name__ == '__main__':
 
     ip_lines = []
     if detected_ips:
-        for ip in detected_ips:
-            ip_lines.append(fmt(f'  🌐  http://{ip}:{port}'))
+        for ip in detected_ips:                ip_lines.append(fmt(f'  🌐  http://{ip}:{port}'))
     else:
         ip_lines.append(fmt(f'  🌐  http://{host}:{port}'))
     
@@ -311,7 +310,8 @@ if __name__ == '__main__':
 {fmt(f'  📂  {target}')}
 {fmt('  🔐  X-API-Key / Bearer Token')}
 {fmt('')}
-{fmt(f'  🏠  http://localhost:{port}/api/health')}
+{fmt(f'  🏠  http://localhost:{port}/  → ZDT Web')}
+{fmt(f'  🏠  http://localhost:{port}/admin/  → Admin')}
 ╚{"═" * W}╝
     ''', flush=True)
     

@@ -1017,6 +1017,79 @@
         }
 
         /* ============================================
+           LOGIN OVERLAY
+           ============================================ */
+        .login-overlay {
+            position: fixed; inset: 0; z-index: 10000;
+            background: var(--bg-base);
+            backdrop-filter: blur(20px);
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+            animation: panelIn 0.4s ease;
+        }
+        .login-overlay.hidden { display: none; }
+        .login-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-active);
+            border-radius: 16px;
+            padding: 40px 36px;
+            max-width: 400px; width: 100%;
+            box-shadow: 0 0 60px rgba(217, 119, 6, 0.08);
+        }
+        .login-card .logo { margin-bottom: 28px; justify-content: center; }
+        .login-card h2 {
+            font-family: 'DM Serif Display', Georgia, serif;
+            font-size: 24px; font-weight: 400; margin: 0 0 4px;
+            text-align: center; color: var(--text-main);
+        }
+        .login-card p {
+            text-align: center; color: var(--text-muted);
+            font-size: 13px; margin: 0 0 28px;
+        }
+        .login-card .form-group { margin-bottom: 18px; }
+        .login-card input[type="text"],
+        .login-card input[type="password"] {
+            width: 100%; padding: 14px 16px; font-size: 15px;
+        }
+        .login-card .btn { width: 100%; padding: 14px; font-size: 15px; }
+        .login-error {
+            color: var(--danger); font-size: 13px;
+            text-align: center; margin-top: 12px; display: none;
+        }
+        .login-error.show { display: block; }
+        .login-footer {
+            text-align: center; margin-top: 20px;
+            font-size: 12px; color: var(--text-dim);
+        }
+        .login-footer a {
+            color: var(--primary-hover); text-decoration: none;
+        }
+        .login-footer a:hover { text-decoration: underline; }
+        .login-card input[type="password"] {
+            width: 100%; padding: 12px 16px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-light);
+            color: var(--text-main);
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif; font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        .login-card input[type="password"]:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: var(--input-focus);
+            box-shadow: 0 0 0 3px var(--primary-glow);
+        }
+        .login-spinner {
+            display: inline-block; width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff; border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle; margin-right: 6px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ============================================
            MOBILE — Bottom Navigation
            ============================================ */
         .mobile-header {
@@ -1224,6 +1297,36 @@
     </style>
 </head>
 <body>
+    <!-- ======== LOGIN OVERLAY ======== -->
+    <div class="login-overlay" id="loginOverlay">
+        <div class="login-card">
+            <div class="logo">
+                <div class="logo-icon"><i class="fa-solid fa-layer-group"></i></div>
+                <div class="logo-text">
+                    <span class="brand">ZDT<span class="brand-accent">/</span>Console</span>
+                    <span class="tagline">Music Toolkit</span>
+                </div>
+            </div>
+            <h2>Welcome Back</h2>
+            <p>Sign in to access ZDT Web Console</p>
+            <form id="loginForm" onsubmit="return handleLogin(event)">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="loginUser" placeholder="admin" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="loginPass" placeholder="••••••••" required autocomplete="current-password">
+                </div>
+                <button type="submit" id="loginBtn" class="btn"><i class="fa-solid fa-right-to-bracket"></i> Sign In</button>
+                <div class="login-error" id="loginError"></div>
+            </form>
+            <div class="login-footer">
+                <a href="/admin/" target="_blank">Admin Dashboard →</a>
+            </div>
+        </div>
+    </div>
+
     <div id="toastContainer"></div>
     <div class="mobile-header">
         <div class="logo">
@@ -1277,6 +1380,7 @@
 
         <div class="sidebar-footer">
             <span class="sidebar-version"><i class="fa-solid fa-circle"></i> v<span id="sideVersion">...</span></span>
+            <button class="sidebar-theme-btn" onclick="logout()" title="Logout" id="sideLogoutBtn" style="margin-right:4px;"><i class="fa-solid fa-right-from-bracket"></i></button>
             <button class="sidebar-theme-btn" onclick="toggleTheme()" title="Toggle theme" id="sideThemeBtn">
                 <i class="fa-solid fa-moon"></i>
             </button>
@@ -1833,6 +1937,115 @@
     </div>
 
     <script>
+        // ============================================
+        // AUTH: Token management & fetch interceptor
+        // ============================================
+        let _authToken = localStorage.getItem('zdt_token') || '';
+        let _isAuthenticated = false;
+
+        // Override fetch to inject Bearer token
+        const _origFetch = window.fetch;
+        window.fetch = function(url, opts = {}) {
+            opts = opts || {};
+            opts.headers = opts.headers || {};
+            if (_authToken && !opts.headers['Authorization']) {
+                opts.headers['Authorization'] = 'Bearer ' + _authToken;
+            }
+            return _origFetch.call(window, url, opts);
+        };
+
+        // Check auth on page load
+        async function checkAuth() {
+            if (!_authToken) {
+                showLogin();
+                return;
+            }
+            try {
+                const res = await fetch('/api/status');
+                if (res.ok) {
+                    _isAuthenticated = true;
+                    hideLogin();
+                } else if (res.status === 401 || res.status === 403) {
+                    // Token expired or invalid
+                    localStorage.removeItem('zdt_token');
+                    _authToken = '';
+                    showLogin();
+                } else {
+                    // Server error, maybe still show the page
+                    _isAuthenticated = true;
+                    hideLogin();
+                }
+            } catch(e) {
+                // Network error — try to show anyway
+                _isAuthenticated = true;
+                hideLogin();
+            }
+        }
+
+        function showLogin() {
+            document.getElementById('loginOverlay').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function hideLogin() {
+            document.getElementById('loginOverlay').classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            // Clear old token before login attempt
+            _authToken = '';
+            const btn = document.getElementById('loginBtn');
+            const errEl = document.getElementById('loginError');
+            const user = document.getElementById('loginUser').value.trim();
+            const pass = document.getElementById('loginPass').value;
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="login-spinner"></span> Signing in...';
+            errEl.classList.remove('show');
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: user, password: pass})
+                });
+                const data = await res.json();
+                if (res.ok && data.token) {
+                    _authToken = data.token;
+                    localStorage.setItem('zdt_token', data.token);
+                    _isAuthenticated = true;
+                    hideLogin();
+                    // Reload data now that we're authenticated
+                    loadStatus();
+                    loadDbStats();
+                    showToast('Login berhasil!', 'success');
+                } else {
+                    errEl.textContent = data.message || data.error || 'Login gagal!';
+                    errEl.classList.add('show');
+                }
+            } catch(e) {
+                errEl.textContent = 'Koneksi error: ' + e.message;
+                errEl.classList.add('show');
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Sign In';
+            return false;
+        }
+
+        function logout() {
+            _authToken = '';
+            _isAuthenticated = false;
+            localStorage.removeItem('zdt_token');
+            showLogin();
+            showToast('Logged out', 'info');
+        }
+
+        // Run auth check on load
+        checkAuth();
+
         window.addEventListener("DOMContentLoaded", () => {
             // dlFormat selector removed — using auto-detect format
         });
