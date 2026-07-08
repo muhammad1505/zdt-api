@@ -7,11 +7,13 @@ import {
   getTelegramConfig, setTelegramConfig, testTelegram,
   getAiKeys, setAiKeys,
   getConfig, updateConfig,
+  getSchedulerStatus, getSchedulerPlaylists, saveSchedulerPlaylist,
 } from '../api/client';
 import {
   Wifi, WifiOff, Settings, Save,
   Server, Square, RotateCw, ToggleLeft, ToggleRight, Activity, Power,
   MessageCircle, Send, Key, Folder, RefreshCw, Play,
+  Clock, Trash2, Plus,
 } from 'lucide-react';
 import FileBrowser from '../components/FileBrowser';
 
@@ -22,6 +24,7 @@ const TABS = [
   { key: 'services', label: 'Services', icon: Server },
   { key: 'vpn', label: 'VPN', icon: Wifi },
   { key: 'telegram', label: 'Telegram', icon: MessageCircle },
+  { key: 'scheduler', label: 'Scheduler', icon: Clock },
   { key: 'ai', label: 'AI Keys', icon: Key },
   { key: 'config', label: 'Config', icon: Settings },
 ];
@@ -66,6 +69,7 @@ export default function SettingsPage() {
       {tab === 'vpn' && <VpnTab toast={toast} />}
       {tab === 'telegram' && <TelegramTab toast={toast} />}
       {tab === 'ai' && <AiKeysTab toast={toast} />}
+      {tab === 'scheduler' && <SchedulerTab toast={toast} />}
       {tab === 'config' && <ConfigTab toast={toast} />}
     </div>
   );
@@ -389,6 +393,173 @@ function AiKeysTab({ toast }: { toast: any }) {
       ))}
       <button onClick={handleSave} disabled={saving}
         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer disabled:opacity-50"><Save size={16} /> {saving ? 'Saving...' : 'Save All'}</button>
+    </div>
+  );
+}
+
+function SchedulerTab({ toast }: { toast: any }) {
+  const [status, setStatus] = useState<{ running: boolean } | null>(null);
+  const [playlists, setPlaylists] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [newUrl, setNewUrl] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newInterval, setNewInterval] = useState('24');
+
+  const fetchAll = async () => {
+    setLoading(true);
+    try {
+      const [st, pl] = await Promise.all([
+        getSchedulerStatus(),
+        getSchedulerPlaylists(),
+      ]);
+      setStatus(st);
+      setPlaylists(pl.playlists || []);
+    } catch {}
+    setLoading(false);
+  };
+  useEffect(() => { fetchAll(); }, []);
+
+  const toggleScheduler = async () => {
+    try {
+      const action = status?.running ? 'stop' : 'start';
+      const { manageDaemon } = await import('../api/client');
+      await manageDaemon('scheduler', action);
+      toast('success', `Scheduler ${action === 'start' ? 'started' : 'stopped'}`);
+      setTimeout(fetchAll, 1000);
+    } catch (e: any) {
+      toast('error', e.response?.data?.error || 'Gagal toggle scheduler');
+    }
+  };
+
+  const addPlaylist = async () => {
+    if (!newUrl.trim()) return;
+    setSaving(true);
+    try {
+      const updated = [...playlists, {
+        url: newUrl.trim(),
+        name: newName.trim() || 'Untitled',
+        interval: parseInt(newInterval),
+        last_sync: null,
+      }];
+      await saveSchedulerPlaylist({ playlists: updated });
+      setPlaylists(updated);
+      setNewUrl('');
+      setNewName('');
+      toast('success', 'Playlist added');
+    } catch (e: any) {
+      toast('error', e.response?.data?.error || 'Gagal add playlist');
+    }
+    setSaving(false);
+  };
+
+  const removePlaylist = async (index: number) => {
+    try {
+      const updated = playlists.filter((_, i) => i !== index);
+      await saveSchedulerPlaylist({ playlists: updated });
+      setPlaylists(updated);
+      toast('success', 'Playlist removed');
+    } catch (e: any) {
+      toast('error', e.response?.data?.error || 'Gagal remove playlist');
+    }
+  };
+
+  const intervalLabels: Record<number, string> = {
+    6: '6 Jam', 12: '12 Jam', 24: '24 Jam (Harian)',
+    48: '2 Hari', 72: '3 Hari', 168: '1 Minggu',
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Scheduler Status */}
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Clock className={status?.running ? 'text-success-500' : 'text-gray-400'} size={24} />
+          <div>
+            <div className="text-base font-semibold text-gray-800 dark:text-white/90">
+              Scheduler {status?.running ? 'Running' : 'Stopped'}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              Menjalankan sinkronisasi playlist secara periodik
+            </div>
+          </div>
+          <button onClick={toggleScheduler} disabled={loading}
+            className={`ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer border-none transition-all hover:brightness-110 disabled:opacity-50 ${
+              status?.running ? 'bg-error-500 text-white' : 'bg-success-500 text-white'
+            }`}>
+            {status?.running ? 'Stop' : 'Start'}
+          </button>
+        </div>
+        {loading && <div className="text-xs text-gray-400">Loading...</div>}
+      </div>
+
+      {/* Add Playlist */}
+      {status?.running && (
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90 mb-4 flex items-center gap-2">
+            <Plus size={16} className="text-brand-500" /> Add Scheduled Playlist
+          </h3>
+          <div className="flex gap-3 flex-wrap">
+            <input value={newName} onChange={e => setNewName(e.target.value)}
+              className="flex-1 min-w-[120px] px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border"
+              placeholder="Nama playlist" />
+            <input value={newUrl} onChange={e => setNewUrl(e.target.value)}
+              className="flex-[2] min-w-[200px] px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border"
+              placeholder="https://open.spotify.com/playlist/..." />
+            <select value={newInterval} onChange={e => setNewInterval(e.target.value)}
+              className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none">
+              {[6, 12, 24, 48, 72, 168].map(h => (
+                <option key={h} value={h}>{intervalLabels[h] || h + ' Jam'}</option>
+              ))}
+            </select>
+            <button onClick={addPlaylist} disabled={saving || !newUrl.trim()}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer disabled:opacity-50">
+              <Plus size={16} /> Add
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Playlist List */}
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
+          <Clock size={16} className="text-brand-500" />
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90 m-0">Scheduled Playlists</h3>
+          <span className="ml-auto text-xs text-gray-400">{playlists.length} active</span>
+        </div>
+        {playlists.length === 0 ? (
+          <div className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+            {status?.running ? 'Belum ada playlist. Tambah playlist di atas.' : 'Start scheduler untuk mengelola playlist.'}
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+            {playlists.map((pl: any, i: number) => (
+              <div key={i} className="flex items-center gap-3 px-5 py-3.5">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-800 dark:text-white/90 truncate">
+                    {pl.name || 'Untitled'}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                    {pl.url}
+                  </div>
+                </div>
+                <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                  {intervalLabels[pl.interval] || pl.interval + ' Jam'}
+                </span>
+                {pl.last_sync && (
+                  <span className="text-xs text-gray-400 whitespace-nowrap">
+                    {new Date(pl.last_sync).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                  </span>
+                )}
+                <button onClick={() => removePlaylist(i)}
+                  className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 hover:text-error-500 hover:border-error-300 transition-colors bg-transparent cursor-pointer">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
