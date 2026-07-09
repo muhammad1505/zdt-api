@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getActivityLogs } from '../api/client';
-import { RefreshCw, Bell } from 'lucide-react';
+import { RefreshCw, Bell, X } from 'lucide-react';
 
 interface Activity {
   id: number;
@@ -40,9 +40,39 @@ function isImportant(a: Activity): boolean {
   return critical.some(c => ep.includes(c));
 }
 
+function notifCategory(a: Activity): string {
+  if (a.status_code >= 400) return 'errors';
+  const ep = a.endpoint.toLowerCase();
+  if (ep.includes('/api/download')) return 'downloads';
+  if (ep.includes('/api/files') || ep.includes('/api/upload')) return 'files';
+  if (ep.includes('/api/settings') || ep.includes('/api/admin/config')) return 'settings';
+  if (ep.includes('/api/admin/users')) return 'users';
+  if (ep.includes('/api/admin/vpn')) return 'vpn';
+  if (ep.includes('/api/admin/services') || ep.includes('/api/admin/system')) return 'services';
+  if (ep.includes('/api/tools')) return 'tools';
+  if (ep.includes('/api/admin/keys') || ep.includes('/api/settings/ai-keys')) return 'keys';
+  if (ep.includes('/api/login') || ep.includes('/api/profile')) return 'auth';
+  return 'other';
+}
+
+const FILTERS = [
+  { key: 'all', label: 'All', color: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300' },
+  { key: 'errors', label: '⚠ Errors', color: 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500' },
+  { key: 'downloads', label: '⬇ Downloads', color: 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400' },
+  { key: 'files', label: '📁 Files', color: 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' },
+  { key: 'settings', label: '⚙ Settings', color: 'bg-warning-50 dark:bg-warning-500/10 text-warning-600 dark:text-warning-500' },
+  { key: 'users', label: '👤 Users', color: 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400' },
+  { key: 'vpn', label: '🔒 VPN', color: 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+  { key: 'services', label: '⚡ Services', color: 'bg-warning-50 dark:bg-warning-500/10 text-warning-600 dark:text-warning-500' },
+  { key: 'tools', label: '🛠 Tools', color: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300' },
+  { key: 'keys', label: '🔑 Keys', color: 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400' },
+  { key: 'auth', label: '🔐 Auth', color: 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' },
+];
+
 export default function NotificationsPage() {
   const [logs, setLogs] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState('all');
 
   const fetch = async () => {
     setLoading(true);
@@ -56,9 +86,15 @@ export default function NotificationsPage() {
 
   useEffect(() => { fetch(); }, []);
 
+  // Filter by category
+  const filtered = useMemo(() => {
+    if (activeFilter === 'all') return logs;
+    return logs.filter(l => notifCategory(l) === activeFilter);
+  }, [logs, activeFilter]);
+
   // Group by date
   const groups: Record<string, Activity[]> = {};
-  for (const log of logs) {
+  for (const log of filtered) {
     const dateKey = fmtDate(log.created_at);
     if (!groups[dateKey]) groups[dateKey] = [];
     groups[dateKey].push(log);
@@ -79,13 +115,33 @@ export default function NotificationsPage() {
         </button>
       </div>
 
+      {/* Filter chips */}
+      <div className="flex flex-wrap gap-1.5">
+        {FILTERS.map(f => (
+          <button
+            key={f.key}
+            onClick={() => setActiveFilter(f.key)}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium cursor-pointer border-none transition-all ${
+              activeFilter === f.key
+                ? f.color + ' ring-1 ring-gray-300 dark:ring-gray-600'
+                : 'bg-gray-50 dark:bg-gray-800/50 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
+            }`}
+          >
+            {f.label}
+            {activeFilter === f.key && activeFilter !== 'all' && (
+              <X size={10} className="opacity-60" />
+            )}
+          </button>
+        ))}
+      </div>
+
       <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] overflow-hidden">
         {loading ? (
           <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">Loading...</div>
         ) : Object.keys(groups).length === 0 ? (
           <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">
             <Bell size={32} className="mx-auto mb-3 text-gray-300 dark:text-gray-600" />
-            No important notifications yet
+            {activeFilter === 'all' ? 'No important notifications yet' : 'No notifications in this category'}
           </div>
         ) : (
           <div>

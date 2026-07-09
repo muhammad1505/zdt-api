@@ -1,4 +1,5 @@
-import { useCallback } from 'react';
+import { useCallback, useState, useEffect } from 'react';
+import api from '../../api/client';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Folder, Key, Users, Wrench, Sliders, ScrollText, Bell,
@@ -19,6 +20,20 @@ const mainItems = [
 
 export default function Sidebar({ userRole = 'operator' }: { userRole?: string }) {
   const { isExpanded, isMobileOpen, isHovered, toggleMobileSidebar, setIsHovered } = useSidebar();
+  const [notifBadge, setNotifBadge] = useState(0);
+
+  // Poll unread notification count for sidebar badge
+  useEffect(() => {
+    const fetchBadge = async () => {
+      try {
+        const res = await api.get('/api/admin/notifications?limit=1');
+        setNotifBadge(res.data.unread_count || 0);
+      } catch {}
+    };
+    fetchBadge();
+    const interval = setInterval(fetchBadge, 15000);
+    return () => clearInterval(interval);
+  }, []);
   const location = useLocation();
   const isActive = useCallback((path: string) => location.pathname === path, [location.pathname]);
   const isAdmin = userRole === 'admin';
@@ -72,17 +87,22 @@ export default function Sidebar({ userRole = 'operator' }: { userRole?: string }
               {(isExpanded || isHovered || isMobileOpen) ? 'Menu' : '•••'}
             </h2>
             <ul className="flex flex-col gap-1">
-              {mainItems.map(item => (
+              {visibleItems.map(item => (
                 <li key={item.to}>
                   <NavLink
                     to={item.to}
                     end={item.to === '/'}
                     onClick={() => isMobileOpen && toggleMobileSidebar()}
-                    className={`menu-item group ${isActive(item.to) ? 'menu-item-active' : 'menu-item-inactive'}
+                    className={`menu-item group relative ${isActive(item.to) ? 'menu-item-active' : 'menu-item-inactive'}
                       ${!isExpanded && !isHovered && !isMobileOpen ? 'lg:justify-center' : 'lg:justify-start'}`}
                   >
-                    <span className={`menu-item-icon-size ${isActive(item.to) ? 'menu-item-icon-active' : 'menu-item-icon-inactive'}`}>
+                    <span className={`menu-item-icon-size relative ${isActive(item.to) ? 'menu-item-icon-active' : 'menu-item-icon-inactive'}`}>
                       <item.icon size={22} />
+                      {item.to === '/notifications' && notifBadge > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-error-500 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-gray-900 shadow-sm">
+                          {notifBadge > 9 ? '9+' : notifBadge}
+                        </span>
+                      )}
                     </span>
                     {(isExpanded || isHovered || isMobileOpen) && (
                       <span className="menu-item-text">{item.label}</span>
