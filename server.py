@@ -146,9 +146,15 @@ def create_app():
             if auth.username == web_user and auth.password == web_pass:
                 return None
 
-        # No CSRF cookie and no valid auth -> allow through
-        # (the endpoint's @requires_auth decorator will enforce auth)
-        return None
+        # No CSRF cookie and no valid auth -> reject
+        app.logger.warning(
+            f"CSRF bypass blocked: {request.method} {request.path} from {request.remote_addr}"
+        )
+        return jsonify({
+            'success': False,
+            'error': 'Unauthorized',
+            'message': 'CSRF token missing and no valid authentication provided'
+        }), 401
 
     app.after_request(log_request)
     

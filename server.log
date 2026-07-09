@@ -1,14 +1,12 @@
-2026-07-09 09:27:46,353 - zdt-api - INFO - Database initialized successfully
-2026-07-09 09:27:46,421 - zdt-api - INFO - Admin dashboard served at /admin/ from /home/zaki/zdt-project/zdt-api/admin-dashboard/dist
-2026-07-09 09:27:46,421 - zdt-api - INFO - ZDT API Server started
-
-╔══════════════════════════════════════════════╗
-║  ⚠️  Port 2000 already in use!              ║
-║                                              ║
-║  Another ZDT API server is already running.  ║
-║  Stop it first with:                         ║
-║    sudo systemctl stop zdt-api               ║
-║  Or if running manually:                     ║
-║    pkill -f "python.*server.py"              ║
-╚══════════════════════════════════════════════╝
-        
+[2026-07-09 16:19:39 +0800] [7183] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 16:19:39 +0800] [7183] [ERROR] Connection in use: ('0.0.0.0', 2000)
+[2026-07-09 16:19:39 +0800] [7183] [ERROR] connection to ('0.0.0.0', 2000) failed: [Errno 98] Address already in use
+[2026-07-09 16:19:40 +0800] [7183] [ERROR] Connection in use: ('0.0.0.0', 2000)
+[2026-07-09 16:19:40 +0800] [7183] [ERROR] connection to ('0.0.0.0', 2000) failed: [Errno 98] Address already in use
+[2026-07-09 16:19:41 +0800] [7183] [ERROR] Connection in use: ('0.0.0.0', 2000)
+[2026-07-09 16:19:41 +0800] [7183] [ERROR] connection to ('0.0.0.0', 2000) failed: [Errno 98] Address already in use
+[2026-07-09 16:19:42 +0800] [7183] [ERROR] Connection in use: ('0.0.0.0', 2000)
+[2026-07-09 16:19:42 +0800] [7183] [ERROR] connection to ('0.0.0.0', 2000) failed: [Errno 98] Address already in use
+[2026-07-09 16:19:43 +0800] [7183] [ERROR] Connection in use: ('0.0.0.0', 2000)
+[2026-07-09 16:19:43 +0800] [7183] [ERROR] connection to ('0.0.0.0', 2000) failed: [Errno 98] Address already in use
+[2026-07-09 16:19:44 +0800] [7183] [ERROR] Can't connect to ('0.0.0.0', 2000)

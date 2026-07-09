@@ -97,7 +97,8 @@ def manage_daemon():
     """Start or stop daemon services."""
     try:
         data = request.get_json(silent=True) or {}
-        service = data.get('service', '')
+        # Accept both 'service' (backend) and 'name' (frontend manageDaemon)
+        service = data.get('service', '') or data.get('name', '')
         action = data.get('action', '')  # 'start' or 'stop'
         
         if service not in DAEMON_MAP:

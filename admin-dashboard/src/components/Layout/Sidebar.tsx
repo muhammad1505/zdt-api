@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect } from 'react';
-import api from '../../api/client';
+import { apiSilent } from '../../api/client';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Folder, Key, Users, Wrench, Sliders, ScrollText, Bell,
@@ -22,11 +22,11 @@ export default function Sidebar({ userRole = 'operator' }: { userRole?: string }
   const { isExpanded, isMobileOpen, isHovered, toggleMobileSidebar, setIsHovered } = useSidebar();
   const [notifBadge, setNotifBadge] = useState(0);
 
-  // Poll unread notification count for sidebar badge
+  // Poll unread notification count for sidebar badge (use apiSilent to avoid false logout)
   useEffect(() => {
     const fetchBadge = async () => {
       try {
-        const res = await api.get('/api/admin/notifications?limit=1');
+        const res = await apiSilent.get('/api/admin/notifications?limit=1');
         setNotifBadge(res.data.unread_count || 0);
       } catch {}
     };

@@ -288,14 +288,12 @@ update_zdt_script() {
     
     echo -e "  ${CYAN}${ICO_ARROW} Mendownload versi terbaru dari GitHub...${RESET}"
     
-    # mktemp: nama file acak untuk cegah symlink attack saat OTA update
-    local tmp_file
     local tmp_file
     tmp_file=$(mktemp "${TMPDIR:-/tmp}/zdt_update_XXXXXX.sh" 2>/dev/null || echo "/tmp/zdt_update_$$.sh")
     # Get latest commit SHA to bypass GitHub CDN cache
     local latest_sha
     local base_url="https://raw.githubusercontent.com/muhammad1505/zdt-music-toolkit"
-    latest_sha=$(curl -sL "https://api.github.com/repos/muhammad1505/zdt-music-toolkit/commits/main" 2>/dev/null | grep -oP '"sha":\s*"\K[^"]+' | head -1)
+    latest_sha=$(curl -sL --fail --retry 3 --retry-connrefused "https://api.github.com/repos/muhammad1505/zdt-music-toolkit/commits/main" 2>/dev/null | grep -oP '"sha":\s*"\K[^"]+' | head -1)
     local dl_ref="${latest_sha:-main}"
     local cache_bust="?v=$(date +%s)"
     local gh_url="${base_url}/${dl_ref}"
@@ -326,7 +324,7 @@ update_zdt_script() {
     # Step 1: Download VERSION file FIRST — single source of truth
     local tmp_ver
     tmp_ver=$(mktemp "${TMPDIR:-/tmp}/zdt_version_XXXXXX" 2>/dev/null || echo "/tmp/zdt_version_$$")
-    curl -sL "${gh_url}/VERSION${cache_bust}" -o "$tmp_ver" 2>/dev/null
+    curl -sL --fail --retry 3 --retry-connrefused "${gh_url}/VERSION${cache_bust}" -o "$tmp_ver" 2>/dev/null
     local new_version
     if [ -s "$tmp_ver" ]; then
         local raw_ver
@@ -336,7 +334,7 @@ update_zdt_script() {
     rm -f "$tmp_ver"
 
     # Step 2: Download zdt.sh
-    if curl -sL "${gh_url}/zdt.sh${cache_bust}" -o "$tmp_file"; then
+    if curl -sL --fail --retry 3 --retry-connrefused "${gh_url}/zdt.sh${cache_bust}" -o "$tmp_file"; then
         if [ -s "$tmp_file" ] && grep -qE "APP_VERSION|Version :" "$tmp_file"; then
             # Step 3: Parse version from VERSION file (primary) or zdt.sh (fallback)
             if [ -z "${new_version:-}" ] || [ "$new_version" = "unknown" ]; then
@@ -378,12 +376,12 @@ update_zdt_script() {
                 echo -e "  ${CYAN}${ICO_ARROW} Dev mode detected — also updating repo modules...${RESET}"
             fi
             
-            if cp "$tmp_file" "$target_bin" 2>/dev/null; then
-                chmod +x "$target_bin"
+            # Atomic replacement: mv instead of cp
+            chmod +x "$tmp_file" 2>/dev/null
+            if mv -f "$tmp_file" "$target_bin" 2>/dev/null; then
                 echo -e "  ${GREEN}   ✓ Main binary updated${RESET}"
             else
-                if command -v sudo >/dev/null 2>&1 && sudo cp "$tmp_file" "$target_bin" 2>/dev/null; then
-                    sudo chmod +x "$target_bin"
+                if command -v sudo >/dev/null 2>&1 && sudo mv -f "$tmp_file" "$target_bin" 2>/dev/null; then
                     echo -e "  ${GREEN}   ✓ Main binary updated (via sudo)${RESET}"
                 else
                     echo -e "  ${YELLOW}   ⚠ Gagal update $target_bin (butuh root). Copy manual:${RESET}"
@@ -448,7 +446,7 @@ update_zdt_script() {
     
     echo -e "  ${CYAN}${ICO_ARROW} Mengupdate shell modules...${RESET}"
     for mod in core helpers download-spotify download-youtube media playlist daemon setup assistant; do
-        curl -sL "${gh_url}/zdt-modules/${mod}.sh${cache_bust}" -o "${mod_dir}/${mod}.sh" 2>/dev/null
+        curl -sL --fail --retry 3 --retry-connrefused "${gh_url}/zdt-modules/${mod}.sh${cache_bust}" -o "${mod_dir}/${mod}.sh" 2>/dev/null
         # Verify download succeeded (file not empty)
         if [ ! -s "${mod_dir}/${mod}.sh" ]; then
             echo -e "  ${RED}   ✗ Gagal download ${mod}.sh! Mengembalikan dari backup...${RESET}"
@@ -464,7 +462,7 @@ update_zdt_script() {
     
     echo -e "  ${CYAN}${ICO_ARROW} Mengupdate Python modules...${RESET}"
     for pymod in zdt_paths.py zdt_db.py; do
-        curl -sL "${gh_url}/zdt-modules/${pymod}${cache_bust}" -o "${mod_dir}/${pymod}" 2>/dev/null
+        curl -sL --fail --retry 3 --retry-connrefused "${gh_url}/zdt-modules/${pymod}${cache_bust}" -o "${mod_dir}/${pymod}" 2>/dev/null
         if [ ! -s "${mod_dir}/${pymod}" ]; then
             echo -e "  ${RED}   ✗ Gagal download ${pymod}! Mengembalikan dari backup...${RESET}"
             if [ -f "$backup_dir/zdt-modules/$pymod" ]; then
@@ -477,7 +475,7 @@ update_zdt_script() {
     done
     echo -e "  ${CYAN}${ICO_ARROW} Mengupdate Python scripts...${RESET}"
     for pyfile in zdt-web.py zdt-watch.py zdt-telegram.py; do
-        curl -sL "${gh_url}/${pyfile}${cache_bust}" -o "${share_dir}/${pyfile}" 2>/dev/null
+        curl -sL --fail --retry 3 --retry-connrefused "${gh_url}/${pyfile}${cache_bust}" -o "${share_dir}/${pyfile}" 2>/dev/null
         if [ ! -s "${share_dir}/${pyfile}" ]; then
             echo -e "  ${RED}   ✗ Gagal download ${pyfile}! Mengembalikan dari backup...${RESET}"
             if [ -f "$backup_dir/$pyfile" ]; then
@@ -491,19 +489,19 @@ update_zdt_script() {
     
     echo -e "  ${CYAN}${ICO_ARROW} Mengupdate dashboard template...${RESET}"
     mkdir -p "$share_dir/templates"
-    curl -sL "${gh_url}/templates/dashboard.html${cache_bust}" -o "$share_dir/templates/dashboard.html" 2>/dev/null
+    curl -sL --fail --retry 3 --retry-connrefused "${gh_url}/templates/dashboard.html${cache_bust}" -o "$share_dir/templates/dashboard.html" 2>/dev/null
     if [ "$dev_mode" = true ] && [ -d "$SCRIPT_DIR/templates" ]; then
         cp "$share_dir/templates/dashboard.html" "$SCRIPT_DIR/templates/dashboard.html" 2>/dev/null || true
     fi
     
     echo -e "  ${CYAN}${ICO_ARROW} Mengupdate utility files...${RESET}"
     for util in install.sh Makefile README.md; do
-        curl -sL "${gh_url}/${util}${cache_bust}" -o "${share_dir}/${util}" 2>/dev/null
+        curl -sL --fail --retry 3 --retry-connrefused "${gh_url}/${util}${cache_bust}" -o "${share_dir}/${util}" 2>/dev/null
         if [ "$dev_mode" = true ] && [ -f "$SCRIPT_DIR/${util}" ]; then
             cp "${share_dir}/${util}" "$SCRIPT_DIR/${util}" 2>/dev/null || true
         fi
     done
-    curl -sL "${gh_url}/zdt-ai-prompt.txt${cache_bust}" -o "${share_dir}/zdt-ai-prompt.txt" 2>/dev/null
+    curl -sL --fail --retry 3 --retry-connrefused "${gh_url}/zdt-ai-prompt.txt${cache_bust}" -o "${share_dir}/zdt-ai-prompt.txt" 2>/dev/null
     chmod +x "${share_dir}/install.sh" 2>/dev/null
     
     # Step 6: Write VERSION file everywhere

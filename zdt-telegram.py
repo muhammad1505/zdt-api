@@ -5,7 +5,7 @@ import time
 import subprocess
 import shutil
 import threading
-from concurrent.futures import ThreadPoolExecutor
+
 try:
     import telebot
     from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -50,17 +50,37 @@ if not TOKEN:
 
 bot = telebot.TeleBot(TOKEN)
 
-# Thread pool untuk background tasks — batasi maks 10 thread concurrent
-# + Queue-based approach: jika pool penuh, task masuk antrian
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+# Background task queue — bounded queue + fixed worker pool
+import queue as _queue
 
-_bg_thread_pool = ThreadPoolExecutor(max_workers=10, thread_name_prefix="zdt_bg")
+_BG_QUEUE_MAXSIZE = 200
+_BG_WORKER_COUNT = 6
+
+_bg_task_queue = _queue.Queue(maxsize=_BG_QUEUE_MAXSIZE)
+
+def _bg_worker_loop():
+    """Worker thread: pulls tasks from bounded queue and runs them."""
+    while True:
+        task_fn = _bg_task_queue.get()
+        try:
+            task_fn()
+        except Exception:
+            logging.exception("Background task crashed")
+        finally:
+            _bg_task_queue.task_done()
+
+for _ in range(_BG_WORKER_COUNT):
+    t = threading.Thread(target=_bg_worker_loop, daemon=True)
+    t.start()
 
 def _safe_submit_task(task_fn):
-    """Submit task ke thread pool dengan queue timeout (60s).
-    Jika pool penuh, task akan menunggu hingga ada slot kosong."""
-    future = _bg_thread_pool.submit(task_fn)
-    return future
+    """Submit task ke bounded queue.
+    Jika queue penuh, return False — caller harus handle penolakan."""
+    try:
+        _bg_task_queue.put_nowait(task_fn)
+        return True
+    except _queue.Full:
+        return False
 
 def _safe_popen(cmd_args, **kwargs):
     """Safe subprocess.Popen wrapper that prevents PIPE deadlock.
@@ -546,12 +566,49 @@ Chat: {history_context}"""
                                                 bot.reply_to(message, f"❌ <b>Terjadi kesalahan.</b>\n\n📄 <b>Error:</b>\n<pre>{html.escape(final_context)}</pre>", parse_mode="HTML")
                                     except Exception as e:
                                         bot.reply_to(message, f"❌ System Error: {e}")
-                                _safe_submit_task(_task)
+                                if not _safe_submit_task(_task):
+                                    if progress_msg:
+                                        try:
+                                            bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id)
+                                        except Exception:
+                                            bot.reply_to(message, "❌ Server sibuk, coba lagi nanti.")
+                                    else:
+                                        bot.reply_to(message, "❌ Server sibuk, coba lagi nanti.")
+
+                            import html as _html_mod
+                            def _resolve_ytsearch(query: str) -> str | None:
+                                """Resolve ytsearch1: query to first video URL using yt-dlp."""
+                                import subprocess as _sp
+                                try:
+                                    res = _sp.run(
+                                        [YT_DLP, query, "--print", "%(webpage_url)s", "--playlist-items", "1"],
+                                        capture_output=True, text=True, timeout=15
+                                    )
+                                    if res.returncode == 0 and res.stdout.strip():
+                                        return res.stdout.strip().split('\n')[0]
+                                except Exception:
+                                    pass
+                                return None
 
                             if action.startswith("gas download audio"):
                                 url = action.replace("gas download audio", "").strip()
-                                # Sanitasi URL: hanya izinkan http/https URLs yang valid
                                 import re
+                                # Handle ytsearch1: queries
+                                if url.startswith("ytsearch1:"):
+                                    search_query = url.replace("ytsearch1:", "")
+                                    sent_msg = bot.reply_to(message, f"🔍 <b>Mencari & mendownload audio...</b>\nKata kunci: <code>{_html_mod.escape(search_query)}</code>", parse_mode="HTML")
+                                    resolved = _resolve_ytsearch(url)
+                                    if resolved:
+                                        url = resolved
+                                        bot.edit_message_text(f"⏳ <b>Sedang Mendownload Audio...</b>\n📍 <code>{url}</code>", chat_id=sent_msg.chat.id, message_id=sent_msg.message_id, parse_mode="HTML")
+                                        run_bg_task(["--download-audio", url], "Audio berhasil di-download!", sent_msg)
+                                    else:
+                                        try:
+                                            bot.edit_message_text("❌ Tidak ditemukan hasil untuk pencarian tersebut.", chat_id=sent_msg.chat.id, message_id=sent_msg.message_id)
+                                        except Exception:
+                                            bot.reply_to(message, "❌ Tidak ditemukan hasil untuk pencarian tersebut.")
+                                    return
+                                # Sanitasi URL: hanya izinkan http/https URLs yang valid
                                 urls = re.findall(r'https?://[^\s]+', url)
                                 if not urls:
                                     bot.reply_to(message, "❌ URL tidak valid untuk download audio.")
@@ -561,8 +618,23 @@ Chat: {history_context}"""
                                 run_bg_task(["--download-audio", url], "Audio berhasil di-download!", sent_msg)
                             elif action.startswith("gas download video"):
                                 url = action.replace("gas download video", "").strip()
-                                # Sanitasi URL: hanya izinkan http/https URLs yang valid
                                 import re
+                                # Handle ytsearch1: queries for video
+                                if url.startswith("ytsearch1:"):
+                                    search_query = url.replace("ytsearch1:", "")
+                                    sent_msg = bot.reply_to(message, f"🔍 <b>Mencari & mendownload video...</b>\nKata kunci: <code>{_html_mod.escape(search_query)}</code>", parse_mode="HTML")
+                                    resolved = _resolve_ytsearch(url)
+                                    if resolved:
+                                        url = resolved
+                                        bot.edit_message_text(f"⏳ <b>Sedang Mendownload Video...</b>\n📍 <code>{url}</code>", chat_id=sent_msg.chat.id, message_id=sent_msg.message_id, parse_mode="HTML")
+                                        run_bg_task(["--download-video", url], "Video berhasil di-download!", sent_msg)
+                                    else:
+                                        try:
+                                            bot.edit_message_text("❌ Tidak ditemukan hasil untuk pencarian tersebut.", chat_id=sent_msg.chat.id, message_id=sent_msg.message_id)
+                                        except Exception:
+                                            bot.reply_to(message, "❌ Tidak ditemukan hasil untuk pencarian tersebut.")
+                                    return
+                                # Sanitasi URL: hanya izinkan http/https URLs yang valid
                                 urls = re.findall(r'https?://[^\s]+', url)
                                 if not urls:
                                     bot.reply_to(message, "❌ URL tidak valid untuk download video.")
@@ -628,7 +700,8 @@ Chat: {history_context}"""
                                             bot.reply_to(message, "❌ Pencarian tidak menemukan hasil.")
                                     except Exception as e:
                                         bot.reply_to(message, f"❌ Error pencarian: {e}")
-                                _safe_submit_task(lambda: _search_task(0))
+                                if not _safe_submit_task(lambda: _search_task(0)):
+                                    bot.reply_to(message, "❌ Server sibuk, coba lagi nanti.")
                             elif action.startswith("cari playlist"):
                                 query = action.replace("cari playlist", "").strip()
                                 import urllib.parse
@@ -668,7 +741,8 @@ Chat: {history_context}"""
                                             bot.reply_to(message, "❌ Pencarian playlist tidak menemukan hasil.")
                                     except Exception as e:
                                         bot.reply_to(message, f"❌ Error pencarian playlist: {e}")
-                                _safe_submit_task(_search_playlist_task)
+                                if not _safe_submit_task(_search_playlist_task):
+                                    bot.reply_to(message, "❌ Server sibuk, coba lagi nanti.")
                             elif action == "hapus vokal":
                                 bot.reply_to(message, "⚙️ Mengakses panel Demucs AI...")
                                 demucs_cmd(message)
@@ -696,7 +770,9 @@ Chat: {history_context}"""
                             elif action == "cek status":
                                 server_status(message)
                             elif action == "buka web":
-                                bot.reply_to(message, "🌐 Buka Web Dashboard di: http://localhost:5678/\n\nLogin dengan user/password dari config.env.\n\nFitur: Monitoring server, download management, scheduler, notifikasi Telegram.")
+                                # Use configured port, fallback to 2000
+                                web_port = get_config_value('ZDT_API_PORT', '2000')
+                                bot.reply_to(message, f"🌐 Buka Web Dashboard di: http://localhost:{web_port}/admin/\n\nLogin dengan user/password dari config.env.\n\nFitur: Monitoring server, download management, scheduler, notifikasi Telegram.")
                             elif action == "setup tools":
                                 bot.reply_to(message, "⚙️ Menjalankan Setup Tools...")
                                 try:
@@ -715,9 +791,11 @@ Chat: {history_context}"""
                                 bot.reply_to(message, "🤖 Telegram Bot sudah berjalan! (Ini botnya sendiri)")
                             elif action == "start watch":
                                 sent_msg = bot.reply_to(message, "⏳ <b>Memulai Watch Daemon...</b>", parse_mode="HTML")
-                                run_bg_task(["--watch"], "Watch Daemon berjalan!")
+                                run_bg_task(["--watch"], "Watch Daemon berjalan!", sent_msg)
                             elif action == "buka scheduler":
-                                bot.reply_to(message, "📅 Scheduler ada di Web Dashboard -> panel Scheduler.\n\nCara pakai:\n1. Buka http://localhost:5678/\n2. Login, buka panel Scheduler\n3. Tambah URL playlist Spotify\n4. Atur interval (jam)\n5. Klik Start Daemon\n\nDownload otomatis + notif Telegram kalau selesai!")
+                                # Use configured port, fallback to 2000
+                                web_port = get_config_value('ZDT_API_PORT', '2000')
+                                bot.reply_to(message, f"📅 Scheduler ada di Web Dashboard -> panel Scheduler.\n\nCara pakai:\n1. Buka http://localhost:{web_port}/admin/\n2. Login, buka panel Scheduler\n3. Tambah URL playlist Spotify\n4. Atur interval (jam)\n5. Klik Start Daemon\n\nDownload otomatis + notif Telegram kalau selesai!")
                             elif action == "ubah storage":
                                 bot.reply_to(message, "📁 Untuk mengubah folder Storage:\n1. Edit file ~/.config/zdt/config.env\n2. Set TARGET_DIR=/path/baru\n3. Restart bot\n\nAtau lewat CLI: zdt -> pilih menu Storage Setup")
                             else:
@@ -918,7 +996,11 @@ def process_specific_file(call):
         except Exception as e:
             bot.edit_message_text(f"❌ Error: {str(e)}", chat_id=msg.chat.id, message_id=msg.message_id)
 
-    _bg_thread_pool.submit(_task)
+    if not _safe_submit_task(_task):
+        try:
+            bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=msg.chat.id, message_id=msg.message_id)
+        except Exception:
+            pass
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('CONFIRM_DELETE:'))
 def confirm_delete_callback(call):
@@ -971,9 +1053,17 @@ def search_download_callback(call):
             out, _ = p.communicate(timeout=300)
             import html
             bot.send_message(call.message.chat.id, f"✅ <b>Download selesai!</b>\n<pre>{html.escape(out[-500:])}</pre>", parse_mode="HTML")
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+            bot.send_message(call.message.chat.id, f"⏱️ <b>Download timeout</b> (lebih dari 5 menit). Coba URL yang lebih pendek.", parse_mode="HTML")
         except Exception as e:
             bot.send_message(call.message.chat.id, f"❌ Gagal: {e}")
-    _safe_submit_task(_task)
+    if not _safe_submit_task(_task):
+        try:
+            bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=call.message.chat.id, message_id=msg.message_id)
+        except Exception:
+            pass
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('SRCH_PAGE:'))
 def search_page_callback(call):
@@ -1043,7 +1133,11 @@ def search_page_callback(call):
             try:
                 bot.edit_message_text(f"❌ Error: {e}", chat_id=call.message.chat.id, message_id=call.message.message_id)
             except Exception: pass
-    _safe_submit_task(_paginate)
+    if not _safe_submit_task(_paginate):
+        try:
+            bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     try:

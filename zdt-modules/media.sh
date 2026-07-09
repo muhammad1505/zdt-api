@@ -138,12 +138,13 @@ _kompres_audio_batch() {
         bg_pids+=($!)
         
         if [ ${#bg_pids[@]} -ge "$max_jobs" ]; then
-            wait 2>/dev/null
+            # Wait for all bg jobs in this batch, discard exit codes to avoid noise
+            wait 2>/dev/null || true
             bg_pids=()
         fi
     done < <(find "${find_args[@]}" 2>/dev/null)
     
-    wait 2>/dev/null
+    wait 2>/dev/null || true
     echo -e "  ──────────────────────────────────────────────────"
 
     echo -e "  ${GREEN}${ICO_OK} 100% Kompresi Selesai!${RESET}"

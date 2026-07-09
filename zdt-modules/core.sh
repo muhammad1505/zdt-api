@@ -420,16 +420,18 @@ _init_logging() {
     mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 }
 
+# Log lock FD
+_LOG_LOCK_FD=""
+
 _rotate_log() {
     if [ -f "$LOG_FILE" ]; then
         local size
         size=$(stat -c%s "$LOG_FILE" 2>/dev/null || stat -f%z "$LOG_FILE" 2>/dev/null || wc -c < "$LOG_FILE" 2>/dev/null || echo 0)
         if [ "$size" -gt "$MAX_LOG_SIZE" ]; then
-            # Keep up to 5 rotated logs, compressed
-            if [ -f "${LOG_FILE}.4.gz" ]; then mv "${LOG_FILE}.4.gz" "${LOG_FILE}.5.gz" 2>/dev/null || true; fi
-            if [ -f "${LOG_FILE}.3.gz" ]; then mv "${LOG_FILE}.3.gz" "${LOG_FILE}.4.gz" 2>/dev/null || true; fi
-            if [ -f "${LOG_FILE}.2.gz" ]; then mv "${LOG_FILE}.2.gz" "${LOG_FILE}.3.gz" 2>/dev/null || true; fi
-            if [ -f "${LOG_FILE}.1.gz" ]; then mv "${LOG_FILE}.1.gz" "${LOG_FILE}.2.gz" 2>/dev/null || true; fi
+            [ -f "${LOG_FILE}.4.gz" ] && mv "${LOG_FILE}.4.gz" "${LOG_FILE}.5.gz" 2>/dev/null || true
+            [ -f "${LOG_FILE}.3.gz" ] && mv "${LOG_FILE}.3.gz" "${LOG_FILE}.4.gz" 2>/dev/null || true
+            [ -f "${LOG_FILE}.2.gz" ] && mv "${LOG_FILE}.2.gz" "${LOG_FILE}.3.gz" 2>/dev/null || true
+            [ -f "${LOG_FILE}.1.gz" ] && mv "${LOG_FILE}.1.gz" "${LOG_FILE}.2.gz" 2>/dev/null || true
             if [ -f "${LOG_FILE}.old" ]; then
                 gzip -c "${LOG_FILE}.old" > "${LOG_FILE}.1.gz" 2>/dev/null || true
                 rm -f "${LOG_FILE}.old" 2>/dev/null || true
@@ -446,9 +448,22 @@ _log() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date '+%s')
 
-    if [ -n "$LOG_FILE" ]; then
-        _rotate_log
-        echo "[$timestamp] [$level] $msg" >> "$LOG_FILE" 2>/dev/null
+    if [ -z "$LOG_FILE" ]; then
+        return
+    fi
+
+    # Acquire flock on log file for atomic append across processes
+    if command -v flock >/dev/null 2>&1; then
+        exec {_LOG_LOCK_FD}>"${LOG_FILE}.lock" 2>/dev/null || true
+        flock -w 2 $_LOG_LOCK_FD 2>/dev/null || true
+    fi
+
+    _rotate_log
+    echo "[$timestamp] [$level] $msg" >> "$LOG_FILE" 2>/dev/null
+
+    if [ -n "$_LOG_LOCK_FD" ]; then
+        eval "exec $_LOG_LOCK_FD>-" 2>/dev/null || true
+        _LOG_LOCK_FD=""
     fi
 }
 
@@ -544,6 +559,17 @@ _config_set() {
     config_dir=$(_get_config_dir)
     config_file=$(_get_config_file)
 
+    # Validate: reject newlines in key or value (config injection prevention)
+    if [[ "$key" == *$'\n'* ]] || [[ "$value" == *$'\n'* ]]; then
+        _log "ERROR" "_config_set: Rejected newline in key/value for $key"
+        return 1
+    fi
+    # Validate key format matches expected pattern
+    if [[ ! "$key" =~ ^(CONF_|ZDT_|TELEGRAM_|AUTO_|storage_dir|LAST_)[a-zA-Z0-9_]*$ ]]; then
+        _log "ERROR" "_config_set: Invalid key format: $key"
+        return 1
+    fi
+
     mkdir -p "$config_dir" 2>/dev/null
 
     if command -v flock >/dev/null 2>&1; then
@@ -553,17 +579,14 @@ _config_set() {
 
     # Atomic write: read entire file, modify, write back — all inside lock scope
     if [ -f "$config_file" ]; then
-        # Use mktemp for safe temp file (prevents symlink attacks & race conditions)
         local tmp_file
         tmp_file=$(mktemp "${TMPDIR:-/tmp}/zdt_config_XXXXXX" 2>/dev/null || echo "/tmp/zdt_config_$$")
-        # Baca file di dalam lock, tulis key baru, lalu mv atomic
         grep -v "^${key}=" "$config_file" > "$tmp_file" 2>/dev/null || true
-        echo "${key}=${value}" >> "$tmp_file"
+        printf '%s=%s\n' "$key" "$value" >> "$tmp_file"
         mv -- "$tmp_file" "$config_file"
     else
-        echo "${key}=${value}" > "$config_file"
+        printf '%s=%s\n' "$key" "$value" >> "$config_file"
     fi
-    # Secure config file permission: hanya owner yang bisa baca
     chmod 600 "$config_file" 2>/dev/null || true
 
     if command -v flock >/dev/null 2>&1; then

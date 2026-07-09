@@ -1,6 +1,6 @@
 import time
 import threading
-from collections import defaultdict
+from collections import OrderedDict
 from flask import request, jsonify, g
 
 # Rate limiting
@@ -8,34 +8,41 @@ RATE_LIMIT_MAX = 240  # requests per minute
 RATE_LIMIT_WINDOW = 60  # seconds
 _rate_limit_lock = threading.Lock()
 
-# In-memory fallback store
-_IN_MEMORY_STORE = defaultdict(list)
+# In-memory fallback store — bounded LRU with TTL
+_IN_MEMORY_STORE_MAX_KEYS = 10000
+_IN_MEMORY_STORE_KEYS_TO_EVICT = 1000
+# key -> list of timestamps, OrderedDict for LRU-like eviction
+_IN_MEMORY_STORE = OrderedDict()
 
 # Redis client (lazy init)
 _redis_client = None
 _redis_available = False
+_redis_init_lock = threading.Lock()
 
 
 def _get_redis():
-    """Lazy-initialize Redis client from config."""
+    """Lazy-initialize Redis client from config (thread-safe)."""
     global _redis_client, _redis_available
     if _redis_client is not None:
         return _redis_client if _redis_available else None
 
-    try:
-        from config import config
-        redis_url = config.get('REDIS_URL', '')
-        if redis_url:
-            import redis as _r
-            _redis_client = _r.from_url(redis_url, socket_connect_timeout=2, socket_timeout=2)
-            _redis_client.ping()
-            _redis_available = True
-            return _redis_client
-    except Exception:
-        pass
-    _redis_client = None
-    _redis_available = False
-    return None
+    with _redis_init_lock:
+        if _redis_client is not None:
+            return _redis_client if _redis_available else None
+        try:
+            from config import config
+            redis_url = config.get('REDIS_URL', '')
+            if redis_url:
+                import redis as _r
+                _redis_client = _r.from_url(redis_url, socket_connect_timeout=2, socket_timeout=2)
+                _redis_client.ping()
+                _redis_available = True
+                return _redis_client
+        except Exception:
+            pass
+        _redis_client = None
+        _redis_available = False
+        return None
 
 
 class RateLimiter:
@@ -72,13 +79,28 @@ class RateLimiter:
         return int(count) < self.max_requests
 
     def _check_memory(self, key: str) -> bool:
-        """Check rate limit via in-memory defaultdict."""
+        """Check rate limit via bounded in-memory LRU store."""
         global _IN_MEMORY_STORE
         now = time.time()
         with _rate_limit_lock:
-            entries = _IN_MEMORY_STORE[key]
-            # Clean old entries
-            _IN_MEMORY_STORE[key] = [t for t in entries if now - t < self.window]
+            # Evict oldest keys if store exceeds max
+            if len(_IN_MEMORY_STORE) >= _IN_MEMORY_STORE_MAX_KEYS:
+                for _ in range(_IN_MEMORY_STORE_KEYS_TO_EVICT):
+                    try:
+                        _IN_MEMORY_STORE.popitem(last=False)
+                    except KeyError:
+                        break
+
+            entries = _IN_MEMORY_STORE.get(key)
+            if entries is None:
+                entries = []
+                _IN_MEMORY_STORE[key] = entries
+            else:
+                # Move to end (mark as recently used)
+                _IN_MEMORY_STORE.move_to_end(key)
+                # Clean old entries
+                _IN_MEMORY_STORE[key] = [t for t in entries if now - t < self.window]
+
             if len(_IN_MEMORY_STORE[key]) >= self.max_requests:
                 return False
             _IN_MEMORY_STORE[key].append(now)
@@ -126,12 +148,17 @@ def check_rate_limit():
 def cleanup_rate_limits():
     """Periodic cleanup of old rate limit entries in memory store."""
     while True:
-        time.sleep(300)  # Every 5 minutes
+        time.sleep(60)  # Every 1 minute
         now = time.time()
         with _rate_limit_lock:
             for ip in list(_IN_MEMORY_STORE.keys()):
-                _IN_MEMORY_STORE[ip] = [t for t in _IN_MEMORY_STORE[ip] if now - t < RATE_LIMIT_WINDOW]
-                if not _IN_MEMORY_STORE[ip]:
+                entries = _IN_MEMORY_STORE.get(ip)
+                if entries is None:
+                    continue
+                fresh = [t for t in entries if now - t < RATE_LIMIT_WINDOW]
+                if fresh:
+                    _IN_MEMORY_STORE[ip] = fresh
+                else:
                     del _IN_MEMORY_STORE[ip]
 
 

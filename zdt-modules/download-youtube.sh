@@ -11,6 +11,7 @@ download_ytdlp() {
     local link file
     local links=()
     local step=1
+    local _dup_cache=""
 
     if ! _ensure_python_tool "yt-dlp" "yt-dlp" 0; then
         return 1
@@ -193,7 +194,7 @@ download_ytdlp() {
         echo -e "  ${GRAY}──────────────────────────────────────────────────${RESET}"
         echo -e "  ${YELLOW}${ICO_ARROW} Memproses:${RESET} $link"
 
-        # Duplicate Detector — skip untuk playlist URLs karena yt-dlp akan handle individual videos
+        # Duplicate Detector — pake cache (1 python call per batch, bukan per-item)
         local skip_dup=0
         if [[ "$link" == *"list="* ]] && [[ "$pilih_playlist" =~ ^[Yy]$ ]]; then
             skip_dup=1
@@ -201,11 +202,10 @@ download_ytdlp() {
         if [ "$skip_dup" -eq 0 ]; then
             local db_script="$_MODULES_DIR/zdt_db.py"
             local db_path="$ZDT_DB_PATH"
-            if [ -f "$db_script" ]; then
-                local is_dup=$(python3 "$db_script" "$db_path" "check_duplicate" "$link" 2>/dev/null)
-                if [ "$is_dup" = "True" ]; then
+            if [ -f "$db_script" ] && [ -n "$db_path" ]; then
+                [ -z "$_dup_cache" ] && _dup_cache=$(mktemp "${TMPDIR:-/tmp}/zdt_dup_XXXXXX" 2>/dev/null) && python3 "$db_script" "$db_path" "list_urls" > "$_dup_cache" 2>/dev/null
+                if grep -Fxq "$link" "$_dup_cache" 2>/dev/null; then
                     if [ "${AUTO_MODE:-0}" = "1" ]; then
-                        # Auto/web mode: skip tanpa prompt (gak ada terminal interaktif)
                         echo -e "  ${YELLOW}${ICO_WARN} Tautan sudah ada di Database Statistik. Dilewati (auto mode).${RESET}"
                         continue
                     fi
@@ -333,6 +333,7 @@ download_ytdlp() {
         _post_download_audio "$scan_dir" "$yt_ext" "$pilih_kompres"
     done
 
+    rm -f "$_dup_cache" 2>/dev/null || true
     _log "INFO" "YouTube download batch complete"
 }
 
@@ -345,6 +346,7 @@ download_video() {
     local link file i
     local links=()
     local step=1
+    local _dup_cache=""
 
     if ! _ensure_python_tool "yt-dlp" "yt-dlp" 0; then
         return 1
@@ -584,7 +586,7 @@ download_video() {
         echo -e "  ${GRAY}──────────────────────────────────────────────────${RESET}"
         echo -e "  ${YELLOW}${ICO_ARROW} Memproses:${RESET} $link"
 
-        # Duplicate Detector — skip untuk playlist URLs karena yt-dlp akan handle individual videos
+        # Duplicate Detector — pake cache (1 python call per batch, bukan per-item)
         local skip_dup=0
         if [[ "$link" == *"list="* ]] && [[ "$pilih_playlist" =~ ^[Yy]$ ]]; then
             skip_dup=1
@@ -592,11 +594,10 @@ download_video() {
         if [ "$skip_dup" -eq 0 ]; then
             local db_script="$_MODULES_DIR/zdt_db.py"
             local db_path="$ZDT_DB_PATH"
-            if [ -f "$db_script" ]; then
-                local is_dup=$(python3 "$db_script" "$db_path" "check_duplicate" "$link" 2>/dev/null)
-                if [ "$is_dup" = "True" ]; then
+            if [ -f "$db_script" ] && [ -n "$db_path" ]; then
+                [ -z "$_dup_cache" ] && _dup_cache=$(mktemp "${TMPDIR:-/tmp}/zdt_dup_XXXXXX" 2>/dev/null) && python3 "$db_script" "$db_path" "list_urls" > "$_dup_cache" 2>/dev/null
+                if grep -Fxq "$link" "$_dup_cache" 2>/dev/null; then
                     if [ "${AUTO_MODE:-0}" = "1" ]; then
-                        # Auto/web mode: skip tanpa prompt (gak ada terminal interaktif)
                         echo -e "  ${YELLOW}${ICO_WARN} Tautan sudah ada di Database Statistik. Dilewati (auto mode).${RESET}"
                         continue
                     fi
@@ -723,5 +724,6 @@ download_video() {
     done
 
     cd "$original_dir" || true
+    rm -f "$_dup_cache" 2>/dev/null || true
     _log "INFO" "Video download batch complete"
 }

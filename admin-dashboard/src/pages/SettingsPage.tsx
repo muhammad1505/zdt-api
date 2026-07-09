@@ -447,13 +447,6 @@ function SchedulerTab({ toast }: { toast: any }) {
   const [newName, setNewName] = useState('');
   const [newInterval, setNewInterval] = useState('24');
 
-  if (loading) return (
-    <div className="space-y-4">
-      <SkeletonCard lines={3} />
-      <SkeletonCard lines={4} />
-    </div>
-  );
-
   const fetchAll = async () => {
     setLoading(true);
     try {
@@ -467,6 +460,13 @@ function SchedulerTab({ toast }: { toast: any }) {
     setLoading(false);
   };
   useEffect(() => { fetchAll(); }, []);
+
+  if (loading) return (
+    <div className="space-y-4">
+      <SkeletonCard lines={3} />
+      <SkeletonCard lines={4} />
+    </div>
+  );
 
   const toggleScheduler = async () => {
     try {

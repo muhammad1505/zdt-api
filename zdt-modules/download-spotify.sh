@@ -14,6 +14,7 @@ download_spotdl() {
     local link file
     local links=()
     local step=1
+    local _dup_cache=""
 
     if ! _ensure_python_tool "spotdl" "spotdl" 0; then
         return 1
@@ -135,14 +136,13 @@ download_spotdl() {
         echo -e "  ${GRAY}──────────────────────────────────────────────────${RESET}"
         echo -e "  ${YELLOW}${ICO_ARROW} Memproses:${RESET} $link"
 
-        # Duplicate Detector — cek DB apakah link ini sudah pernah didownload
+        # Duplicate Detector — pake cache (1 python call per batch)
         local db_script="$_MODULES_DIR/zdt_db.py"
         local db_path="$ZDT_DB_PATH"
-        if [ -f "$db_script" ] && [ -n "$link" ]; then
-            local is_dup=$(python3 "$db_script" "$db_path" "check_duplicate" "$link" 2>/dev/null)
-            if [ "$is_dup" = "True" ]; then
+        if [ -f "$db_script" ] && [ -n "$db_path" ] && [ -n "$link" ]; then
+            [ -z "$_dup_cache" ] && _dup_cache=$(mktemp "${TMPDIR:-/tmp}/zdt_dup_XXXXXX" 2>/dev/null) && python3 "$db_script" "$db_path" "list_urls" > "$_dup_cache" 2>/dev/null
+            if grep -Fxq "$link" "$_dup_cache" 2>/dev/null; then
                 if [ "${AUTO_MODE:-0}" = "1" ]; then
-                    # Auto/web mode: skip tanpa prompt
                     echo -e "  ${YELLOW}${ICO_WARN} Tautan sudah ada di Database Statistik. Dilewati (auto mode).${RESET}"
                     continue
                 fi
@@ -220,6 +220,7 @@ download_spotdl() {
         _post_download_audio "$scan_dir" "$spotdl_ext" "$pilih_kompres"
     done
 
+    rm -f "$_dup_cache" 2>/dev/null || true
     _log "INFO" "Spotify download batch complete"
 }
 

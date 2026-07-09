@@ -447,102 +447,93 @@ _kompres_video_file() {
 _playlist_selector() {
     local url="$1"
     SELECTED_PLAYLIST_ITEMS=""
-    
+
     echo -e -n "  ${CYAN}${ICO_ARROW} Mengambil daftar lagu dari playlist...${RESET} "
-    
+
     local tmp_playlist="meta_temp_$$.playlist"
-    
-    # Run yt-dlp in background to show spinner
+
     yt-dlp --flat-playlist --print "%(playlist_index)s|%(url)s|%(title)s" "$url" > "$tmp_playlist" 2>/dev/null &
     local yt_pid=$!
     _zdt_spinner $yt_pid "Mengambil daftar playlist..."
-    
+
     if [ ! -s "$tmp_playlist" ]; then
         echo -e "  ${RED}${ICO_FAIL} Gagal mengambil daftar playlist atau playlist kosong.${RESET}"
         rm -f "$tmp_playlist"
         return 1
     fi
-    
-    # Read playlist items into array
-    local playlist_items=()
-    while IFS= read -r line; do
-        playlist_items+=("$line")
-    done < "$tmp_playlist"
-    rm -f "$tmp_playlist"
-    
-    local total_items=${#playlist_items[@]}
+
+    local total_items
+    total_items=$(wc -l < "$tmp_playlist" 2>/dev/null || echo 0)
+    if [ "$total_items" -le 0 ]; then
+        echo -e "  ${RED}${ICO_FAIL} Playlist kosong.${RESET}"
+        rm -f "$tmp_playlist"
+        return 1
+    fi
+    # Cap display to prevent UI overload
+    if [ "$total_items" -gt 2000 ]; then
+        echo -e "  ${YELLOW}⚠ Playlist sangat besar ($total_items item). Hanya 2000 pertama ditampilkan.${RESET}"
+    fi
+    local display_items=$(( total_items > 2000 ? 2000 : total_items ))
+
     local page_size=10
-    local total_pages=$(( (total_items + page_size - 1) / page_size ))
+    local total_pages=$(( (display_items + page_size - 1) / page_size ))
     local current_page=1
-    
+
     while true; do
-        local start_idx=$(( (current_page - 1) * page_size ))
-        local end_idx=$(( start_idx + page_size - 1 ))
-        if [ "$end_idx" -ge "$total_items" ]; then
-            end_idx=$(( total_items - 1 ))
-        fi
-        
+        local start_line=$(( (current_page - 1) * page_size + 1 ))
+        local end_line=$(( start_line + page_size - 1 ))
+        [ "$end_line" -gt "$display_items" ] && end_line="$display_items"
+
         echo -e "\n  ${MAGENTA}■ DAFTAR LAGU PLAYLIST (Halaman $current_page dari $total_pages)${RESET}"
         echo -e "  ${GRAY}──────────────────────────────────────────────────${RESET}"
-        
-        for i in $(seq $start_idx $end_idx); do
-            local item="${playlist_items[$i]}"
-            local idx="${item%%|*}"
-            local rest="${item#*|}"
-            local title="${rest#*|}"
-            
-            # Truncate title if too long
-            if [ ${#title} -gt 50 ]; then
-                title="${title:0:47}..."
+
+        local line_num="$start_line"
+        while [ "$line_num" -le "$end_line" ]; do
+            local line
+            line=$(sed -n "${line_num}p" "$tmp_playlist" 2>/dev/null)
+            if [ -n "$line" ]; then
+                local idx="${line%%|*}"
+                local rest="${line#*|}"
+                local title="${rest#*|}"
+                [ ${#title} -gt 50 ] && title="${title:0:47}..."
+                echo -e "  ${GREEN}[$idx]${RESET} $title"
             fi
-            echo -e "  ${GREEN}[$idx]${RESET} $title"
+            line_num=$((line_num + 1))
         done
-        
+
         echo -e "  ${GRAY}──────────────────────────────────────────────────${RESET}"
         echo -e "  ${YELLOW}Navigasi:${RESET} [n] Next Page | [p] Prev Page | [0] Batal"
         echo -e -n "  ${BOLD}[?] Masukkan nomor lagu (contoh: 2 atau 1,4,7): ${RESET}"
-        
+
         local user_input
         read -r user_input
-        
+
         if [ -z "$user_input" ]; then
             continue
         elif [ "$user_input" = "0" ]; then
+            rm -f "$tmp_playlist"
             return 1
         elif [ "${user_input,,}" = "n" ]; then
-            if [ "$current_page" -lt "$total_pages" ]; then
-                current_page=$((current_page + 1))
-            fi
+            [ "$current_page" -lt "$total_pages" ] && current_page=$((current_page + 1))
         elif [ "${user_input,,}" = "p" ]; then
-            if [ "$current_page" -gt 1 ]; then
-                current_page=$((current_page - 1))
-            fi
+            [ "$current_page" -gt 1 ] && current_page=$((current_page - 1))
         else
-            # Validasi input regex: format "angka,angka" atau "angka"
             if [[ "$user_input" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
                 SELECTED_PLAYLIST_ITEMS="$user_input"
-                
                 SELECTED_PLAYLIST_URLS=()
                 IFS=',' read -ra sel_indices <<< "$user_input"
                 for sel_idx in "${sel_indices[@]}"; do
-                    # Strip leading zeros safely
                     sel_idx=$((10#$sel_idx))
-                    for item in "${playlist_items[@]}"; do
-                        local idx="${item%%|*}"
-                        local num_idx=$((10#$idx))
-                        if [ "$num_idx" -eq "$sel_idx" ]; then
-                            local rest="${item#*|}"
-                            local item_url="${rest%%|*}"
-                            # Ensure full URL (yt-dlp may return just video ID with some flags)
-                            if [[ "$item_url" != http* ]]; then
-                                item_url="https://www.youtube.com/watch?v=$item_url"
-                            fi
-                            SELECTED_PLAYLIST_URLS+=("$item_url")
-                            break
-                        fi
-                    done
+                    local matched_line
+                    matched_line=$(grep -m1 "^${sel_idx}|" "$tmp_playlist" 2>/dev/null)
+                    if [ -n "$matched_line" ]; then
+                        local rest="${matched_line#*|}"
+                        local item_url="${rest%%|*}"
+                        [[ "$item_url" != http* ]] && item_url="https://www.youtube.com/watch?v=$item_url"
+                        SELECTED_PLAYLIST_URLS+=("$item_url")
+                    fi
                 done
-                
+                rm -f "$tmp_playlist"
                 return 0
             else
                 echo -e "  ${RED}${ICO_FAIL} Input tidak valid! Masukkan angka atau pisahkan dengan koma.${RESET}"
