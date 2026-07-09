@@ -8,14 +8,16 @@ import {
   getAiKeys, setAiKeys,
   getConfig, updateConfig,
   getSchedulerStatus, getSchedulerPlaylists, saveSchedulerPlaylist,
+  saveNotifSettings,
 } from '../api/client';
 import {
   Wifi, WifiOff, Settings, Save,
   Server, Square, RotateCw, ToggleLeft, ToggleRight, Activity, Power,
   MessageCircle, Send, Key, Folder, RefreshCw, Play,
-  Clock, Trash2, Plus,
+  Clock, Trash2, Plus, Bell,
 } from 'lucide-react';
 import FileBrowser from '../components/FileBrowser';
+import { CATEGORIES, SOUND_PROFILES, notifGroupIcon, notifGroupLabel, playCategorySound } from '../utils/notifications';
 
 interface VpnSt { connected: boolean; ip: string; interface: string; service_active: boolean; service_enabled: boolean; }
 interface Svc { name: string; active: string; enabled: string; }
@@ -27,6 +29,7 @@ const TABS = [
   { key: 'scheduler', label: 'Scheduler', icon: Clock },
   { key: 'ai', label: 'AI Keys', icon: Key },
   { key: 'config', label: 'Config', icon: Settings },
+  { key: 'notifications', label: 'Notifications', icon: Bell },
 ];
 
 const SERVICE_LABELS: Record<string, string> = {
@@ -71,6 +74,7 @@ export default function SettingsPage() {
       {tab === 'ai' && <AiKeysTab toast={toast} />}
       {tab === 'scheduler' && <SchedulerTab toast={toast} />}
       {tab === 'config' && <ConfigTab toast={toast} />}
+      {tab === 'notifications' && <NotificationsTab toast={toast} />}
     </div>
   );
 }
@@ -563,6 +567,99 @@ function SchedulerTab({ toast }: { toast: any }) {
     </div>
   );
 }
+
+function NotificationsTab({ toast }: { toast: any }) {
+  const [soundEnabled, setSoundEnabled] = useState(
+    localStorage.getItem('zdt_notif_sound') !== 'false'
+  );
+  const [desktopEnabled, setDesktopEnabled] = useState(
+    localStorage.getItem('zdt_notif_desktop') !== 'false'
+  );
+
+  const toggleSound = () => {
+    const v = !soundEnabled;
+    setSoundEnabled(v);
+    localStorage.setItem('zdt_notif_sound', String(v));
+    saveNotifSettings({ sound: v }).then(() => {
+      toast('success', v ? 'Sound enabled' : 'Sound disabled');
+    }).catch(() => {});
+  };
+
+  const toggleDesktop = () => {
+    const v = !desktopEnabled;
+    setDesktopEnabled(v);
+    localStorage.setItem('zdt_notif_desktop', String(v));
+    saveNotifSettings({ desktop: v }).then(() => {
+      toast('success', v ? 'Desktop notifications enabled' : 'Desktop notifications disabled');
+    }).catch(() => {});
+  };
+
+  const cats = CATEGORIES.filter(c => c !== 'other');
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+        <div className="flex items-center gap-2.5 mb-5">
+          <Bell className="text-brand-500" size={20} />
+          <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">Notification Preferences</h3>
+        </div>
+
+        <div className="flex flex-wrap gap-4 mb-6">
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <button
+              onClick={toggleSound}
+              className={`w-10 h-6 rounded-full transition-colors relative border-none cursor-pointer ${
+                soundEnabled ? 'bg-brand-500' : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
+                soundEnabled ? 'translate-x-4' : 'translate-x-0'
+              }`} />
+            </button>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Sound Notifications</span>
+          </label>
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <button
+              onClick={toggleDesktop}
+              className={`w-10 h-6 rounded-full transition-colors relative border-none cursor-pointer ${
+                desktopEnabled ? 'bg-brand-500' : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
+                desktopEnabled ? 'translate-x-4' : 'translate-x-0'
+              }`} />
+            </button>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Desktop Notifications</span>
+          </label>
+        </div>
+
+        <div className="border-t border-gray-100 dark:border-gray-800 pt-4">
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Sound Preview</h4>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Click any category to hear its notification chime</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+            {cats.map(cat => (
+              <button
+                key={cat}
+                onClick={() => {
+                  if (soundEnabled) {
+                    playCategorySound(cat);
+                  }
+                }}
+                disabled={!soundEnabled}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-transparent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <span className="text-sm">{notifGroupIcon(cat)}</span>
+                <span className="flex-1 text-left text-xs">{notifGroupLabel(cat)}</span>
+                <span className="text-[10px] text-gray-400 font-mono">{SOUND_PROFILES[cat]?.freq || ''}Hz</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function ConfigTab({ toast }: { toast: any }) {
   const [cfg, setCfg] = useState<Record<string, string>>({});

@@ -68,6 +68,15 @@ export default function AppHeader({ username, onLogout }: Props) {
   // Sound preview modal
   const [soundPreviewOpen, setSoundPreviewOpen] = useState(false);
 
+  // Help modal for keyboard shortcuts
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  const SHORTCUTS = [
+    { key: 'T', description: 'Toggle dark/light theme' },
+    { key: 'N', description: 'Toggle notification panel' },
+    { key: '?', description: 'Show this help modal' },
+  ];
+
   // Theme toggle
   const [isDark, setIsDark] = useState(() => {
     return document.documentElement.classList.contains('dark') ||
@@ -86,6 +95,28 @@ export default function AppHeader({ username, onLogout }: Props) {
       localStorage.setItem('zdt_theme', 'light');
     }
   }, [isDark]);
+
+  // Keyboard shortcuts — moved after toggleTheme definition so toggleTheme is in scope
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) {
+        return;
+      }
+      if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        toggleTheme();
+      } else if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        setNotifOpen((prev: boolean) => !prev);
+      } else if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+        e.preventDefault();
+        setHelpOpen((prev: boolean) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleTheme]);
 
   // Notification sound — uses shared playCategorySound
   const playNotifSound = useCallback((category?: string) => {
@@ -425,6 +456,32 @@ export default function AppHeader({ username, onLogout }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Help Modal */}
+      {helpOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[999999]" onClick={() => setHelpOpen(false)}>
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 w-[340px] max-w-[95vw] shadow-theme-md py-5 px-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90">Keyboard Shortcuts</h3>
+              <button onClick={() => setHelpOpen(false)}
+                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-none cursor-pointer transition-colors">
+                Close
+              </button>
+            </div>
+            <div className="space-y-2">
+              {SHORTCUTS.map(s => (
+                <div key={s.key} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+                  <span className="text-xs text-gray-600 dark:text-gray-300">{s.description}</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-xs font-mono text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 min-w-[24px] text-center">{s.key}</kbd>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 text-[10px] text-gray-400 text-center">
+              Shortcuts are disabled when typing in input fields
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sound Preview Modal */}
       {soundPreviewOpen && (
