@@ -411,6 +411,19 @@ def notifications():
     })
 
 
+@admin_bp.route('/api/admin/activity/clear', methods=['POST'])
+@requires_admin
+def clear_activity():
+    """Delete all activity logs from the database."""
+    try:
+        conn = get_connection()
+        conn.execute('DELETE FROM activity_logs')
+        conn.commit()
+        return jsonify({'success': True, 'message': 'All activity logs cleared'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @admin_bp.route('/api/admin/activity', methods=['GET'])
 @requires_admin
 def activity_logs():

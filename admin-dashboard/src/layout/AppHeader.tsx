@@ -174,21 +174,36 @@ export default function AppHeader({ username, onLogout }: Props) {
     }).catch(() => {});
   }, []);
 
-  // Notification sound using Web Audio API (no external file needed)
-  const playNotifSound = useCallback(() => {
+  // Notification sound using Web Audio API — different chime per category
+  const soundProfiles: Record<string, { freq: number; type: OscillatorType; duration: number; gain: number }> = {
+    errors: { freq: 220, type: 'sawtooth', duration: 0.5, gain: 0.15 },
+    downloads: { freq: 660, type: 'sine', duration: 0.35, gain: 0.1 },
+    files: { freq: 880, type: 'sine', duration: 0.3, gain: 0.12 },
+    settings: { freq: 520, type: 'triangle', duration: 0.3, gain: 0.1 },
+    users: { freq: 440, type: 'triangle', duration: 0.3, gain: 0.1 },
+    vpn: { freq: 550, type: 'triangle', duration: 0.3, gain: 0.1 },
+    services: { freq: 600, type: 'sine', duration: 0.3, gain: 0.1 },
+    keys: { freq: 770, type: 'sine', duration: 0.3, gain: 0.1 },
+    auth: { freq: 700, type: 'sine', duration: 0.3, gain: 0.1 },
+    tools: { freq: 500, type: 'triangle', duration: 0.35, gain: 0.1 },
+    other: { freq: 660, type: 'sine', duration: 0.3, gain: 0.1 },
+  };
+
+  const playNotifSound = useCallback((category?: string) => {
     if (!notifSoundEnabled) return;
     try {
+      const profile = (category && soundProfiles[category]) || soundProfiles.other;
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.frequency.value = 880;
-      osc.type = 'sine';
-      gain.gain.setValueAtTime(0.12, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.frequency.value = profile.freq;
+      osc.type = profile.type;
+      gain.gain.setValueAtTime(profile.gain, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + profile.duration);
       osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.3);
+      osc.stop(ctx.currentTime + profile.duration);
     } catch { /* Audio not supported */ }
   }, [notifSoundEnabled]);
 
@@ -223,17 +238,16 @@ export default function AppHeader({ username, onLogout }: Props) {
         // Update unread count from server, play sound if new
         if (unread > 0 && !notifOpenRef.current) {
           setUnreadCount(prev => prev + unread);
-          playNotifSound();
-          if (notifDesktopEnabled && 'Notification' in window && Notification.permission === 'granted') {
-            const newNotif = items.length > 0 ? items[0] : null;
-            if (newNotif) {
-              const isError = newNotif.status_code >= 400;
-              new Notification('ZDT API' + (isError ? ' ⚠️' : ''), {
+          const newNotif = items.length > 0 ? items[0] : null;
+          const category = newNotif ? notifGroupKey(newNotif) : undefined;
+          playNotifSound(category);
+          if (notifDesktopEnabled && newNotif && 'Notification' in window && Notification.permission === 'granted') {
+            const isError = newNotif.status_code >= 400;
+            new Notification('ZDT API' + (isError ? ' ⚠️' : ''), {
                 body: eventLabel(newNotif),
                 icon: '/favicon.svg',
                 tag: 'zdt-notif',
               });
-            }
           }
         }
       } catch {}
@@ -349,17 +363,31 @@ export default function AppHeader({ username, onLogout }: Props) {
                   <h4 className="text-sm font-semibold text-gray-800 dark:text-white/90">Notifications</h4>
                   <div className="flex items-center gap-2">
                     {notifications.length > 0 && (
-                      <button
-                        onClick={() => {
-                          if (lastNotifId.current > 0) {
-                            setLastSeenNotifId(lastNotifId.current).catch(() => {});
-                          }
-                          setUnreadCount(0);
-                        }}
-                        className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-none cursor-pointer transition-colors"
-                      >
-                        Mark all read
-                      </button>
+                      <>
+                        <button
+                          onClick={() => {
+                            if (lastNotifId.current > 0) {
+                              setLastSeenNotifId(lastNotifId.current).catch(() => {});
+                            }
+                            setUnreadCount(0);
+                          }}
+                          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-none cursor-pointer transition-colors"
+                        >
+                          Mark read
+                        </button>
+                        <span className="text-[10px] text-gray-300 dark:text-gray-600">·</span>
+                        <button
+                          onClick={() => {
+                            api.post('/api/admin/activity/clear').then(() => {
+                              setNotifications([]);
+                              setUnreadCount(0);
+                            }).catch(() => {});
+                          }}
+                          className="text-xs text-gray-400 hover:text-error-500 dark:hover:text-error-400 bg-transparent border-none cursor-pointer transition-colors"
+                        >
+                          Clear all
+                        </button>
+                      </>
                     )}
                     <Link to="/logs" className="text-xs text-brand-500 hover:underline no-underline">View all</Link>
                   </div>

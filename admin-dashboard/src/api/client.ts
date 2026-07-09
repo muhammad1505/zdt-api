@@ -137,6 +137,11 @@ export const getActivityLogs = async (limit = 50) => {
   return res.data;
 };
 
+export const clearActivityLogs = async () => {
+  const res = await api.post('/api/admin/activity/clear');
+  return res.data;
+};
+
 // === VPN MANAGEMENT ===
 
 export const getVpnStatus = async () => {

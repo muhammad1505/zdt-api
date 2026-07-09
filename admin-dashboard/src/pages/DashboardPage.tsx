@@ -83,7 +83,7 @@ export default function DashboardPage() {
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6 hover:shadow-theme-md hover:border-brand-200 dark:hover:border-brand-500/30 transition-all duration-300">
           <div className="flex items-center justify-center w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl">
             <Cpu className="text-brand-500 size-6" />
           </div>
@@ -102,8 +102,8 @@ export default function DashboardPage() {
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">5m: {data.cpu.load_5m.toFixed(2)} · 15m: {data.cpu.load_15m.toFixed(2)}</p>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
-          <div className="flex items-center justify-center w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl">
+        <div className="group rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6 hover:shadow-theme-md hover:border-warning-200 dark:hover:border-warning-500/30 transition-all duration-300">
+          <div className="flex items-center justify-center w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl group-hover:scale-110 transition-transform">
             <Activity className="text-warning-500 size-6" />
           </div>
           <div className="flex items-end justify-between mt-5">
@@ -121,7 +121,7 @@ export default function DashboardPage() {
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">{data.memory.available_gb.toFixed(1)} GB available</p>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6 hover:shadow-theme-md transition-all duration-300">
           <div className="flex items-center justify-center w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl">
             <HardDrive className={`size-6 ${diskPct > 80 ? 'text-error-500' : diskPct > 50 ? 'text-warning-500' : 'text-success-500'}`} />
           </div>
@@ -146,7 +146,7 @@ export default function DashboardPage() {
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">{data.disk?.free || 0} GB free</p>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6 hover:shadow-theme-md transition-all duration-300">
           <div className="flex items-center justify-center w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl">
             <Clock className="text-brand-500 size-6" />
           </div>
@@ -231,8 +231,8 @@ export default function DashboardPage() {
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${running ? 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' : 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500'}`}>WATCH</span>
                   )}
                 </span>
-                <span className={`text-xs font-medium ${running ? 'text-success-600 dark:text-success-500' : 'text-error-600 dark:text-error-500'}`}>
-                  {running ? '● Running' : '○ Stopped'}
+                <span className={`inline-flex items-center gap-1 text-xs font-medium ${running ? 'text-success-600 dark:text-success-500' : 'text-error-600 dark:text-error-500'}`}>
+                  {running ? <><span className="w-1.5 h-1.5 rounded-full bg-success-500 animate-pulse" /> Running</> : <><span className="w-1.5 h-1.5 rounded-full bg-error-500" /> Stopped</>}
                 </span>
               </div>
             );
