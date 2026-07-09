@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getActivityLogs, clearActivityLogs } from '../api/client';
-import { RefreshCw, Trash2, Download } from 'lucide-react';
+import { RefreshCw, Trash2, Download, Search, ChevronDown } from 'lucide-react';
 import { fmtTime } from '../utils/notifications';
 import Swal from 'sweetalert2';
 
@@ -15,15 +15,32 @@ const FILTERS: { key: LogFilter; label: string; color: string }[] = [
 export default function LogsPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [limit, setLimit] = useState(100);
+  const [totalLogs, setTotalLogs] = useState(0);
   const [filter, setFilter] = useState<LogFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [liveConnected, setLiveConnected] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
 
-  // Filtered logs
+  // Filtered logs: combine status filter + search filter
   const filteredLogs = useMemo(() => {
-    if (filter === 'all') return logs;
-    if (filter === 'errors') return logs.filter(l => l.status_code >= 400);
-    return logs.filter(l => l.status_code < 400);
-  }, [logs, filter]);
+    let result = logs;
+    if (filter === 'errors') result = result.filter(l => l.status_code >= 400);
+    else if (filter === 'success') result = result.filter(l => l.status_code < 400);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(l =>
+        l.endpoint?.toLowerCase().includes(q) ||
+        l.method?.toLowerCase().includes(q) ||
+        String(l.status_code).includes(q) ||
+        l.ip_address?.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [logs, filter, searchQuery]);
 
   // Track scroll position for "Go to top" button
   useEffect(() => {
@@ -40,27 +57,65 @@ export default function LogsPage() {
 
   const fetchLogs = async () => {
     setLoading(true);
-    try { const data = await getActivityLogs(100); setLogs(data.logs || []); } catch {}
+    try {
+      const data = await getActivityLogs(limit);
+      setLogs(data.logs || []);
+      setTotalLogs(data.total || data.logs?.length || 0);
+    } catch {}
     setLoading(false);
   };
 
-  useEffect(() => { fetchLogs(); }, []);
+  useEffect(() => { fetchLogs(); }, [limit]);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
+  const loadMore = async () => {
+    setLoadingMore(true);
+    const newLimit = limit + 100;
+    try {
+      const data = await getActivityLogs(newLimit);
+      setLogs(data.logs || []);
+      setTotalLogs(data.total || data.logs?.length || 0);
+      setLimit(newLimit);
+    } catch {}
+    setLoadingMore(false);
+  };
+
+  // Real-time polling: 5s interval, pauses when tab is hidden
+  const startPolling = useCallback(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setLiveConnected(true);
+    pollRef.current = setInterval(() => {
+      if (document.hidden) return;
       getActivityLogs(10).then(data => {
         const newLogs = data.logs || [];
         if (newLogs.length > 0) {
+          let uniqueCount = 0;
           setLogs(prev => {
             const existingIds = new Set(prev.map((l: any) => l.id || l.created_at));
             const unique = newLogs.filter((l: any) => !existingIds.has(l.id || l.created_at));
+            uniqueCount = unique.length;
             return [...unique, ...prev];
           });
+          setTotalLogs(prev => prev + uniqueCount);
         }
-      }).catch(() => {});
-    }, 10000);
-    return () => clearInterval(interval);
+      }).catch(() => {
+        setLiveConnected(false);
+      });
+    }, 5000);
   }, []);
+
+  useEffect(() => {
+    startPolling();
+    const handleVis = () => {
+      if (!document.hidden) {
+        setLiveConnected(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVis);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      document.removeEventListener('visibilitychange', handleVis);
+    };
+  }, [startPolling]);
 
   return (
     <div className="space-y-6">
@@ -134,9 +189,9 @@ export default function LogsPage() {
         </div>
       </div>
 
-      {/* Filter chips */}
+      {/* Filter chips + Search + Live indicator */}
       {!loading && logs.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex flex-wrap items-center gap-2">
           {FILTERS.map(f => (
             <button
               key={f.key}
@@ -155,6 +210,29 @@ export default function LogsPage() {
               )}
             </button>
           ))}
+          {/* Search input */}
+          <div className="relative flex-1 min-w-[200px] max-w-xs ml-auto">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search endpoint, method, IP..."
+              className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-xs text-gray-800 dark:text-white/90 outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-none cursor-pointer p-0 text-xs"
+              >✕</button>
+            )}
+          </div>
+          {/* Live indicator */}
+          <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+            <span className={`w-1.5 h-1.5 rounded-full ${liveConnected ? 'bg-success-500 animate-pulse' : 'bg-error-500'}`} />
+            {liveConnected ? 'Live' : 'Disconnected'}
+            <span className="text-gray-500">·</span>
+            <span>{totalLogs} total</span>
+          </div>
         </div>
       )}
 
@@ -180,10 +258,10 @@ export default function LogsPage() {
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">
-            {filter === 'errors' ? 'No errors found' : filter === 'success' ? 'No successful requests found' : 'No activity yet'}
+            {searchQuery ? 'No results matching your search' : filter === 'errors' ? 'No errors found' : filter === 'success' ? 'No successful requests found' : 'No activity yet'}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" ref={logsContainerRef}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
@@ -215,6 +293,19 @@ export default function LogsPage() {
                 ))}
               </tbody>
             </table>
+            {/* Load more button */}
+            {filteredLogs.length >= 100 && (
+              <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800 text-center">
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-transparent cursor-pointer disabled:opacity-50"
+                >
+                  <ChevronDown size={14} />
+                  {loadingMore ? 'Loading...' : `Load more (showing ${filteredLogs.length} of ${totalLogs})`}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
