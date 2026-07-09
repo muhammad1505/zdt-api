@@ -1,0 +1,14 @@
+2026-07-09 09:27:46,353 - zdt-api - INFO - Database initialized successfully
+2026-07-09 09:27:46,421 - zdt-api - INFO - Admin dashboard served at /admin/ from /home/zaki/zdt-project/zdt-api/admin-dashboard/dist
+2026-07-09 09:27:46,421 - zdt-api - INFO - ZDT API Server started
+
+╔══════════════════════════════════════════════╗
+║  ⚠️  Port 2000 already in use!              ║
+║                                              ║
+║  Another ZDT API server is already running.  ║
+║  Stop it first with:                         ║
+║    sudo systemctl stop zdt-api               ║
+║  Or if running manually:                     ║
+║    pkill -f "python.*server.py"              ║
+╚══════════════════════════════════════════════╝
+        

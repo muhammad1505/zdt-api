@@ -82,6 +82,44 @@ function eventLabel(a: Activity): string {
   return ok ? `${a.method} ${a.endpoint} berhasil` : `${a.method} ${a.endpoint} gagal (${a.status_code})`;
 }
 
+function notifGroupKey(a: Activity): string {
+  if (a.status_code >= 400) return 'errors';
+  const ep = a.endpoint.toLowerCase();
+  if (ep.includes('/api/download')) return 'downloads';
+  if (ep.includes('/api/files') || ep.includes('/api/upload')) return 'files';
+  if (ep.includes('/api/settings') || ep.includes('/api/admin/config')) return 'settings';
+  if (ep.includes('/api/admin/users')) return 'users';
+  if (ep.includes('/api/admin/vpn')) return 'vpn';
+  if (ep.includes('/api/admin/services') || ep.includes('/api/admin/system')) return 'services';
+  if (ep.includes('/api/tools')) return 'tools';
+  if (ep.includes('/api/admin/keys') || ep.includes('/api/settings/ai-keys')) return 'keys';
+  if (ep.includes('/api/login') || ep.includes('/api/profile')) return 'auth';
+  return 'other';
+}
+
+function notifGroupLabel(key: string): string {
+  const labels: Record<string, string> = {
+    errors: '⚠ Errors', downloads: 'Downloads', files: 'Files',
+    settings: 'Settings', users: 'Users', vpn: 'VPN',
+    services: 'Services', tools: 'Tools', keys: 'API Keys',
+    auth: 'Auth', other: 'Other',
+  };
+  return labels[key] || 'Other';
+}
+
+function notifGroupIcon(key: string): string {
+  if (key === 'errors') return '🔴';
+  if (key === 'downloads') return '⬇';
+  if (key === 'files') return '📁';
+  if (key === 'users') return '👤';
+  if (key === 'vpn') return '🔒';
+  if (key === 'services') return '⚙';
+  if (key === 'keys') return '🔑';
+  if (key === 'tools') return '🛠';
+  if (key === 'auth') return '🔐';
+  return '•';
+}
+
 export default function AppHeader({ username, onLogout }: Props) {
   const { toggleSidebar, toggleMobileSidebar, isMobileOpen } = useSidebar();
   const [userOpen, setUserOpen] = useState(false);
@@ -309,7 +347,22 @@ export default function AppHeader({ username, onLogout }: Props) {
               <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-theme-md py-3 z-[99999]">
                 <div className="px-4 pb-2 mb-2 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
                   <h4 className="text-sm font-semibold text-gray-800 dark:text-white/90">Notifications</h4>
-                  <Link to="/logs" className="text-xs text-brand-500 hover:underline no-underline">View all</Link>
+                  <div className="flex items-center gap-2">
+                    {notifications.length > 0 && (
+                      <button
+                        onClick={() => {
+                          if (lastNotifId.current > 0) {
+                            setLastSeenNotifId(lastNotifId.current).catch(() => {});
+                          }
+                          setUnreadCount(0);
+                        }}
+                        className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-none cursor-pointer transition-colors"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                    <Link to="/logs" className="text-xs text-brand-500 hover:underline no-underline">View all</Link>
+                  </div>
                 </div>
                 {/* Notification preferences toggles */}
                 <div className="px-4 pb-3 mb-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3 text-xs">
@@ -340,19 +393,45 @@ export default function AppHeader({ username, onLogout }: Props) {
                   <div className="px-4 py-6 text-center text-xs text-gray-400">No notifications</div>
                 ) : (
                   <div className="max-h-[320px] overflow-y-auto">
-                    {notifications.map(a => (
-                      <div key={a.id} className="px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 border-b border-gray-50 dark:border-gray-800/50 last:border-0">
-                        <div className="flex items-start gap-2.5">
-                          <span className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${a.status_code >= 400 ? 'bg-error-500' : 'bg-success-500'}`} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs text-gray-800 dark:text-white/90 font-medium truncate">{eventLabel(a)}</p>
-                            <p className="text-[10px] text-gray-400 mt-0.5">
-                              {a.status_code >= 400 ? `Error ${a.status_code}` : a.status_code} · {fmtTime(a.created_at)}
-                            </p>
+                    {(() => {
+                      // Group notifications by type
+                      const groups: Record<string, Activity[]> = {};
+                      for (const a of notifications) {
+                        const key = notifGroupKey(a);
+                        if (!groups[key]) groups[key] = [];
+                        groups[key].push(a);
+                      }
+                      return Object.entries(groups).map(([key, items]) => {
+                        const latest = items.reduce((a, b) => a.id > b.id ? a : b);
+                        const isErrorGroup = key === 'errors';
+                        return (
+                          <div key={key}>
+                            {/* Group header */}
+                            <div className="flex items-center gap-1.5 px-4 py-1.5 bg-gray-50/80 dark:bg-gray-800/40 border-b border-gray-100 dark:border-gray-800/50">
+                              <span className="text-[11px]">{notifGroupIcon(key)}</span>
+                              <span className={`text-[11px] font-semibold uppercase tracking-wider ${isErrorGroup ? 'text-error-600 dark:text-error-500' : 'text-gray-500 dark:text-gray-400'}`}>
+                                {notifGroupLabel(key)}
+                              </span>
+                              <span className={`ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded-full ${isErrorGroup ? 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>
+                                {items.length}
+                              </span>
+                            </div>
+                            {/* Latest item in group */}
+                            <div className="px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 border-b border-gray-50 dark:border-gray-800/50 last:border-0">
+                              <div className="flex items-start gap-2.5">
+                                <span className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${isErrorGroup ? 'bg-error-500' : 'bg-success-500'}`} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs text-gray-800 dark:text-white/90 font-medium truncate">{eventLabel(latest)}</p>
+                                  <p className="text-[10px] text-gray-400 mt-0.5">
+                                    {latest.status_code >= 400 ? `Error ${latest.status_code}` : latest.status_code} · {fmtTime(latest.created_at)}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    ))}
+                        );
+                      });
+                    })()}
                   </div>
                 )}
               </div>
