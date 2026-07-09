@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getDashboard, getDependencies, installDependencies, getServices } from '../api/client';
 import type { DashboardData, DependencyInfo } from '../types';
-import { Cpu, HardDrive, Clock, Activity, Folder, Server, Globe, Package, CheckCircle, XCircle, Download, ChevronDown, ChevronRight, ArrowUp, X } from 'lucide-react';
+import { Cpu, HardDrive, Clock, Activity, Folder, Server, Globe, Package, CheckCircle, XCircle, Download, ChevronDown, ChevronRight, ArrowUp, X, RefreshCw } from 'lucide-react';
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -74,11 +74,26 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Dashboard</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          v{data.version} · {data.hostname} · {data.arch}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Dashboard</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            v{data.version} · {data.hostname} · {data.arch}
+          </p>
+        </div>
+        <button
+          onClick={async () => {
+            try {
+              const d = await getDashboard();
+              setData(d);
+            } catch {}
+          }}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-transparent cursor-pointer"
+          title="Refresh dashboard data"
+        >
+          <RefreshCw size={14} />
+          <span className="hidden sm:inline">Refresh</span>
+        </button>
       </div>
 
       {/* Metric Cards */}

@@ -19,6 +19,24 @@ import {
 import FileBrowser from '../components/FileBrowser';
 import { CATEGORIES, SOUND_PROFILES, notifGroupIcon, notifGroupLabel, playCategorySound } from '../utils/notifications';
 
+function SkeletonCard({ lines = 3 }: { lines?: number }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6 animate-pulse">
+      <div className="flex items-center gap-2.5 mb-4">
+        <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded" />
+        <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded" />
+      </div>
+      {Array.from({ length: lines }).map((_, i) => (
+        <div key={i} className="h-3 bg-gray-200 dark:bg-gray-700 rounded mb-2.5" style={{ width: `${60 + Math.random() * 40}%` }} />
+      ))}
+      <div className="flex gap-2 mt-4">
+        <div className="h-8 w-20 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+        <div className="h-8 w-20 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
 interface VpnSt { connected: boolean; ip: string; interface: string; service_active: boolean; service_enabled: boolean; }
 interface Svc { name: string; active: string; enabled: string; }
 
@@ -153,8 +171,13 @@ function ServicesTab({ toast }: { toast: any }) {
         {serverStatus && <div className="mt-3 text-sm p-3 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-white/90 border border-gray-100 dark:border-gray-700">{serverStatus}</div>}
       </div>
 
-      {loading ? <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">Loading...</div>
-      : (
+      {loading ? (
+        <>
+          <SkeletonCard lines={2} />
+          <SkeletonCard lines={2} />
+          <SkeletonCard lines={2} />
+        </>
+      ) : (
         <>
           {services.map(svc => (
         <div key={svc.name} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
@@ -231,7 +254,12 @@ function VpnTab({ toast }: { toast: any }) {
     setAl(null);
   };
 
-  if (loading) return <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">Loading...</div>;
+  if (loading) return (
+    <div className="space-y-4">
+      <SkeletonCard lines={4} />
+      <SkeletonCard lines={3} />
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -322,7 +350,11 @@ function TelegramTab({ toast }: { toast: any }) {
     setTesting(false);
   };
 
-  if (loading) return <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">Loading...</div>;
+  if (loading) return (
+    <div className="space-y-4">
+      <SkeletonCard lines={3} />
+    </div>
+  );
 
   return (
     <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-6">
@@ -377,7 +409,11 @@ function AiKeysTab({ toast }: { toast: any }) {
     setSaving(false);
   };
 
-  if (loading) return <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">Loading...</div>;
+  if (loading) return (
+    <div className="space-y-4">
+      <SkeletonCard lines={3} />
+    </div>
+  );
 
   return (
     <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-6">
@@ -405,10 +441,18 @@ function SchedulerTab({ toast }: { toast: any }) {
   const [status, setStatus] = useState<{ running: boolean } | null>(null);
   const [playlists, setPlaylists] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
   const [saving, setSaving] = useState(false);
   const [newUrl, setNewUrl] = useState('');
   const [newName, setNewName] = useState('');
   const [newInterval, setNewInterval] = useState('24');
+
+  if (loading) return (
+    <div className="space-y-4">
+      <SkeletonCard lines={3} />
+      <SkeletonCard lines={4} />
+    </div>
+  );
 
   const fetchAll = async () => {
     setLoading(true);

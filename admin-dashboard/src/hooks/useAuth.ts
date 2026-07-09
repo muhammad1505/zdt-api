@@ -26,6 +26,13 @@ export function useAuth() {
       localStorage.setItem('zdt_admin_user', JSON.stringify(data.user));
       setToken(data.token);
       setUser(data.user);
+      // Redirect to saved path after login (from 401/403 interceptor)
+      const savedPath = sessionStorage.getItem('zdt_redirect_path');
+      if (savedPath) {
+        sessionStorage.removeItem('zdt_redirect_path');
+        // Use setTimeout to ensure state is updated before redirect
+        setTimeout(() => { window.location.href = savedPath; }, 100);
+      }
       return true;
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login gagal');
