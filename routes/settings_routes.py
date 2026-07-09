@@ -297,7 +297,7 @@ def get_settings():
         vpn = {
             'connected': vpn_connected,
             'ip': vpn_ip,
-            'server': config.get('VPN_SERVER', 'remote4.vpnmurahjobja.my.id'),
+            'server': config.get('VPN_SERVER', 'remote4.vpnmurahjogja.my.id'),
             'auto_start': config.get('VPN_AUTOSTART', 'false').lower() == 'true'
         }
         
@@ -569,14 +569,6 @@ def update_telegram_settings():
         # Update
         if bot_token is not None and bot_token != '********':
             config.update_config('TELEGRAM_BOT_TOKEN', str(bot_token))
-            token_path = os.path.expanduser('~/.config/zdt/telegram_token.txt')
-            try:
-                os.makedirs(os.path.dirname(token_path), exist_ok=True)
-                with open(token_path, 'w') as f:
-                    f.write(str(bot_token))
-                os.chmod(token_path, 0o600)
-            except Exception:
-                pass
         if chat_id is not None and chat_id != '********':
             config.update_config('TELEGRAM_CHAT_ID', str(chat_id))
             

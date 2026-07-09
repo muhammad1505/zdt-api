@@ -57,9 +57,42 @@ def get_logs():
 
 
 @logs_bp.route('/api/logs/stream', methods=['GET'])
-@requires_auth
 def stream_logs():
     """SSE endpoint for real-time log streaming."""
+    from auth import requires_auth, verify_bearer_token
+    token = request.args.get('token', '')
+    if token:
+        payload = verify_bearer_token(token)
+        if not payload:
+            return jsonify({'error': 'Unauthorized'}), 401
+    else:
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            payload = verify_bearer_token(auth_header[7:])
+            if not payload:
+                return jsonify({'error': 'Unauthorized'}), 401
+        else:
+            # Also check X-API-Key for mobile clients
+            api_key = request.headers.get('X-API-Key', '')
+            if api_key:
+                from database import parse_smart_api_key, validate_api_key
+                parsed = parse_smart_api_key(api_key)
+                if parsed:
+                    key_data = validate_api_key(parsed['key_id'], parsed['secret'])
+                    if not key_data:
+                        return jsonify({'error': 'Unauthorized'}), 401
+                elif '|' in api_key:
+                    parts = api_key.split('|')
+                    if len(parts) == 2:
+                        key_data = validate_api_key(parts[0], parts[1])
+                        if not key_data:
+                            return jsonify({'error': 'Unauthorized'}), 401
+                    else:
+                        return jsonify({'error': 'Unauthorized'}), 401
+                else:
+                    return jsonify({'error': 'Unauthorized'}), 401
+            else:
+                return jsonify({'error': 'Unauthorized'}), 401
     if not sse_connect():
         return jsonify({'error': 'Too many connections'}), 429
     
@@ -79,8 +112,12 @@ def stream_logs():
                             f.seek(last_size)
                             new_data = f.read()
                             if new_data:
-                                yield f'data: {new_data}\n\n'
+                                for line in new_data.rstrip('\n').split('\n'):
+                                    yield f'data: {line}\n'
+                                yield '\n'
                         last_size = current_size
+                    elif current_size < last_size:
+                        last_size = 0  # Log was rotated/truncated
                 yield ':keepalive\n\n'
                 time.sleep(1)
         except GeneratorExit:

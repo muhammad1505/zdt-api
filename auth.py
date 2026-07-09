@@ -23,8 +23,8 @@ def generate_bearer_token(user_id, username, role):
         'user_id': user_id,
         'username': username,
         'role': role,
-        'exp': time.time() + JWT_EXPIRY_HOURS * 3600,
-        'iat': time.time()
+        'exp': int(time.time()) + JWT_EXPIRY_HOURS * 3600,
+        'iat': int(time.time())
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -137,7 +137,7 @@ def requires_admin(f):
             parsed = parse_smart_api_key(api_key_header)
             if parsed:
                 key_data = validate_api_key(parsed['key_id'], parsed['secret'])
-                if key_data and key_data.get('role') in ('admin', 'operator', 'full'):
+                if key_data and key_data.get('role') in ('admin',):
                     g.auth_type = 'mobile'
                     g.api_key = key_data
                     return f(*args, **kwargs)
@@ -145,7 +145,7 @@ def requires_admin(f):
                 parts = api_key_header.split('|')
                 if len(parts) == 2:
                     key_data = validate_api_key(parts[0], parts[1])
-                    if key_data and key_data.get('role') in ('admin', 'operator', 'full'):
+                    if key_data and key_data.get('role') in ('admin',):
                         g.auth_type = 'mobile'
                         g.api_key = key_data
                         return f(*args, **kwargs)

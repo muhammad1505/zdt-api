@@ -32,7 +32,8 @@ logger = logging.getLogger('zdt-api')
 
 def create_app():
     """Create and configure the Flask application."""
-    app = Flask(__name__)
+    app = Flask(__name__,
+                template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
 
     # Restrict CORS to known origins for security
     allowed_origins = [
@@ -106,7 +107,7 @@ def create_app():
         if csrf_cookie:
             # CSRF cookie present -> must validate
             csrf_header = request.headers.get('X-CSRF-Token')
-            if not csrf_cookie or not csrf_header or csrf_header != csrf_cookie:
+            if not csrf_header or csrf_header != csrf_cookie:
                 return jsonify({
                     'success': False,
                     'error': 'CSRF validation failed',
@@ -137,8 +138,13 @@ def create_app():
                         return None
 
         # Check Basic Auth (zdt-web compat)
-        if request.authorization is not None:
-            return None
+        auth = request.authorization
+        if auth and auth.username and auth.password:
+            from config import config as app_config
+            web_user = app_config.get_web_user()
+            web_pass = app_config.get_web_pass()
+            if auth.username == web_user and auth.password == web_pass:
+                return None
 
         # No CSRF cookie and no valid auth -> allow through
         # (the endpoint's @requires_auth decorator will enforce auth)
@@ -187,7 +193,7 @@ def create_app():
         if isinstance(e, HTTPException):
             return jsonify({'error': e.name, 'message': e.description}), e.code
         logger.exception('Unhandled exception')
-        return jsonify({'error': 'Internal server error', 'message': str(e)}), 500
+        return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred'}), 500
     
     # Serve admin dashboard static files
     
@@ -203,7 +209,9 @@ def create_app():
         @app.route('/')
         def zdt_web_home():
             from flask import render_template
-            return render_template('dashboard.html')
+            from auth import generate_bearer_token
+            token = generate_bearer_token(0, app_config.get_web_user(), 'admin')
+            return render_template('dashboard.html', auto_token=token)
 
         @app.route('/admin/')
         @app.route('/admin/<path:path>')

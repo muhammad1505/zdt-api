@@ -149,8 +149,9 @@ def init_db():
             ''')
             conn.execute('INSERT OR REPLACE INTO schema_version (version) VALUES (1)')
             conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger('zdt-api').error(f'Schema migration failed: {e}')
 
     if cur_version < 2:
         try:
@@ -182,8 +183,9 @@ def init_db():
             ''')
             conn.execute('INSERT OR REPLACE INTO schema_version (version) VALUES (2)')
             conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger('zdt-api').error(f'Schema migration failed: {e}')
 
     conn.commit()
 
@@ -281,8 +283,13 @@ def validate_api_key(key_id, secret):
     # Check expiration
     if key['expired_at']:
         try:
-            expired = datetime.fromisoformat(key['expired_at'])
-            if expired < datetime.now(timezone.utc).replace(tzinfo=None):
+            expired_str = key['expired_at']
+            if expired_str.endswith('+00:00'):
+                expired_str = expired_str.replace('+00:00', '+0000')
+            expired = datetime.fromisoformat(expired_str)
+            if not expired.tzinfo:
+                expired = expired.replace(tzinfo=timezone.utc)
+            if expired < datetime.now(timezone.utc):
                 conn.execute('UPDATE api_keys SET active = 0 WHERE id = ?', (key['id'],))
                 conn.commit()
                 return None
@@ -347,7 +354,7 @@ def log_activity(api_key_id=None, user_id=None, endpoint=None, method=None, ip_a
 
 def get_all_api_keys():
     conn = get_connection()
-    rows = conn.execute('SELECT * FROM api_keys ORDER BY created_at DESC').fetchall()
+    rows = conn.execute('SELECT id, key_id, label, host, port, role, active, expired_at, created_at, last_used, created_by FROM api_keys ORDER BY created_at DESC').fetchall()
     return [dict(r) for r in rows]
 
 
@@ -385,6 +392,7 @@ def create_user(username, password, role='operator', label=''):
 
 def delete_user(user_id):
     conn = get_connection()
+    conn.execute('DELETE FROM api_keys WHERE created_by = ?', (user_id,))
     conn.execute('DELETE FROM users WHERE id = ?', (user_id,))
     conn.commit()
 
@@ -402,12 +410,12 @@ def get_activity_logs(limit=100):
 
 def create_download(url, fmt='auto', created_by=None):
     conn = get_connection()
-    conn.execute(
+    cursor = conn.execute(
         'INSERT INTO downloads (url, format, status, created_by) VALUES (?, ?, ?, ?)',
         (url, fmt, 'queued', created_by)
     )
     conn.commit()
-    return conn.execute('SELECT id FROM downloads ORDER BY id DESC LIMIT 1').fetchone()['id']
+    return cursor.lastrowid
 
 
 def get_download(download_id):
@@ -468,7 +476,7 @@ def delete_download(download_id):
 
 def clear_download_history():
     conn = get_connection()
-    conn.execute("DELETE FROM downloads WHERE status IN ('completed', 'failed', 'cancelled')")
+    conn.execute("DELETE FROM downloads")
     conn.commit()
 
 
@@ -520,7 +528,7 @@ def save_notification_settings(data: dict):
     conn = get_connection()
     for key in ('notif_sound', 'notif_desktop'):
         if key in data:
-            val = 'true' if data[key] else 'false'
+            val = 'true' if str(data[key]).lower() in ('true', '1', 'yes') else 'false'
             conn.execute(
                 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
                 (key, val)
@@ -565,11 +573,10 @@ def backup_database():
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     backup_path = os.path.join(backup_dir, f'zdt_api_backup_{timestamp}.db')
     try:
-        conn = get_connection()
-        conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-        if hasattr(_local, 'conn') and _local.conn is not None:
-            _local.conn.close()
-            _local.conn = None
+        import sqlite3
+        backup_conn = sqlite3.connect(db_path)
+        backup_conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        backup_conn.close()
         shutil.copy2(db_path, backup_path)
         return backup_path
     except Exception as e:

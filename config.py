@@ -68,16 +68,17 @@ class ZdtConfig:
                 changed = True
         if changed:
             lines = []
-            if os.path.exists(self.config_path):
-                with open(self.config_path) as f:
-                    lines = f.readlines()
-            for key, val in defaults.items():
-                if any(l.startswith(f'{key}=') for l in lines):
-                    continue
-                lines.append(f'{key}={val}\n')
-            with open(self.config_path, 'w') as f:
-                f.writelines(lines)
-            os.chmod(self.config_path, 0o600)
+            with _config_lock:
+                if os.path.exists(self.config_path):
+                    with open(self.config_path) as f:
+                        lines = f.readlines()
+                for key, val in defaults.items():
+                    if any(l.startswith(f'{key}=') for l in lines):
+                        continue
+                    lines.append(f'{key}={val}\n')
+                with open(self.config_path, 'w') as f:
+                    f.writelines(lines)
+                os.chmod(self.config_path, 0o600)
 
     def get(self, key, default=None):
         return self._config.get(key, default)
@@ -104,7 +105,12 @@ class ZdtConfig:
         return self.get('TARGET_DIR', os.path.expanduser('~/Music/ZDT_Downloads'))
     
     def get_web_pass(self):
-        return self.get('ZDT_WEB_PASS', 'admin')
+        password = self.get('ZDT_WEB_PASS', '')
+        if not password:
+            import secrets
+            password = secrets.token_hex(8)
+            self.update_config('ZDT_WEB_PASS', password)
+        return password
     
     def get_web_user(self):
         return self.get('ZDT_WEB_USER', 'admin')
@@ -117,6 +123,8 @@ class ZdtConfig:
     
     def update_config(self, key, value):
         """Update a config value and write to file. Thread-safe."""
+        if '\n' in str(value) or '\r' in str(value):
+            raise ValueError(f'Config value for {key} contains newlines')
         self._config[key] = value
         with _config_lock:
             lines = []
@@ -131,9 +139,13 @@ class ZdtConfig:
                             lines.append(line)
             if not found:
                 lines.append(f'{key}={value}\n')
-            with open(self.config_path, 'w') as f:
+            # Atomic write via temp file
+            import tempfile
+            fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(self.config_path))
+            with os.fdopen(fd, 'w') as f:
                 f.writelines(lines)
-            os.chmod(self.config_path, 0o600)
+            os.chmod(tmp_path, 0o600)
+            os.rename(tmp_path, self.config_path)
 
 
 config = ZdtConfig()

@@ -15,6 +15,12 @@
             return _origFetch.call(window, url, opts);
         };
 
+        // Auto-login from server-rendered token
+        const serverToken = document.getElementById('autoToken')?.getAttribute('data-token');
+        if (serverToken && !_authToken) {
+            _authToken = serverToken;
+            localStorage.setItem('zdt_token', serverToken);
+        }
         // Check auth on page load
         async function checkAuth() {
             if (!_authToken) {
@@ -1176,7 +1182,7 @@
                 console.warn('SSE: too many retries, giving up');
                 return;
             }
-            sseSource = new EventSource('/api/logs/stream');
+            sseSource = new EventSource('/api/logs/stream?token=' + encodeURIComponent(_authToken));
             _sseRetryCount++;
 
             sseSource.onopen = function() {

@@ -777,12 +777,12 @@ def _kill_process(script_name):
             for pid in r.stdout.strip().split('\n'):
                 if pid:
                     try: os.kill(int(pid), signal.SIGTERM)
-                    except: pass
+                    except Exception: pass
             time.sleep(1)
             for pid in r.stdout.strip().split('\n'):
                 if pid:
                     try: os.kill(int(pid), signal.SIGKILL)
-                    except: pass
+                    except Exception: pass
     except Exception:
         pass
 
@@ -892,12 +892,19 @@ def _check_pip_binary(name, venv_dir):
 @requires_admin
 def check_dependencies():
     deps = []
+    def _best_binary(*names):
+        for name in names:
+            result = _check_binary(name)
+            if result.get('installed'):
+                return result
+        return _check_binary(names[0]) or {'installed': False}
+        
     deps.append({'_key': 'python3', '_label': 'Python 3', '_group': 'core',
-                 **(_check_binary('python3') or _check_binary('python') or {'installed': False})})
+                 **_best_binary('python3', 'python')})
     deps.append({'_key': 'ffmpeg', '_label': 'FFmpeg', '_group': 'system',
                  **(_check_binary('ffmpeg') or {'installed': False})})
     deps.append({'_key': 'nodejs', '_label': 'Node.js', '_group': 'system',
-                 **(_check_binary('nodejs') or _check_binary('node') or {'installed': False})})
+                 **_best_binary('nodejs', 'node')})
     deps.append({'_key': 'npm', '_label': 'npm', '_group': 'system',
                  **(_check_binary('npm') or {'installed': False})})
 

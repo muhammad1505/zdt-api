@@ -62,10 +62,11 @@ class RateLimiter:
             return None  # signal fallback
         now = time.time()
         window_start = now - self.window
+        import secrets
         pipe = redis.pipeline()
         pipe.zremrangebyscore(key, 0, window_start)
         pipe.zcard(key)
-        pipe.zadd(key, {now: now})
+        pipe.zadd(key, {f'{now}:{secrets.token_hex(4)}': now})
         pipe.expire(key, int(self.window * 2))
         _, count, _, _ = pipe.execute()
         return int(count) < self.max_requests

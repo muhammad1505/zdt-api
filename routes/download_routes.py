@@ -32,7 +32,7 @@ def _spawn_download_process(url, format_type):
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
     if is_spotify:
-        cmd = ['spotdl', '--output', config.get_target_dir(), '--', url]
+        cmd = ['spotdl', '--output', config.get_target_dir(), url]
     else:
         cmd = ['yt-dlp', '-o', os.path.join(config.get_target_dir(), '%(title)s.%(ext)s')]
         if format_type == 'audio':
@@ -281,8 +281,10 @@ def playlist_items():
         url = data.get('url', '')
         if not url:
             return jsonify({"success": False, "message": "URL kosong!"}), 400
+        if not url.startswith(('http://', 'https://')):
+            return jsonify({"success": False, "message": "URL tidak valid!"}), 400
         result = subprocess.run(
-            ['yt-dlp', '--flat-playlist', '--dump-json', '--no-warnings', url],
+            ['yt-dlp', '--flat-playlist', '--dump-json', '--no-warnings', '--', url],
             capture_output=True, text=True, timeout=30
         )
         if result.returncode != 0:
@@ -324,6 +326,10 @@ def download_selected():
         quality = data.get('quality', '')
         if not urls:
             return jsonify({"success": False, "message": "Tidak ada URL dipilih!"}), 400
+            
+        for url in urls:
+            if not isinstance(url, str) or not url.startswith(('http://', 'https://')):
+                return jsonify({"success": False, "message": "URL tidak valid!"}), 400
 
         zdt_bin = shutil.which("zdt") or ZdtPaths.get_bin_path()
         log_path = WEB_TASK_LOG_PATH

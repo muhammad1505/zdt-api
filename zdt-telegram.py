@@ -29,16 +29,17 @@ YT_DLP = shutil.which('yt-dlp') or os.path.expanduser('~/.local/bin/yt-dlp')
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 if not TOKEN:
-    # Token file: ~/.config/zdt/telegram_token.txt
     TOKEN_FILE = ZdtPaths.get_telegram_token_path()
     if os.path.exists(TOKEN_FILE):
-        # Pastikan token file aman (hanya bisa dibaca owner)
         try:
             os.chmod(TOKEN_FILE, 0o600)
         except OSError:
             pass
         with open(TOKEN_FILE, 'r') as f:
             TOKEN = f.read().strip()
+if not TOKEN:
+    import config as _zdt_config
+    TOKEN = _zdt_config.config.get('TELEGRAM_BOT_TOKEN', '')
 
 if not TOKEN:
     print("Token Telegram tidak ditemukan di konfigurasi atau env var!")
@@ -266,9 +267,13 @@ def demucs_cmd(message):
         bot.reply_to(message, "❌ Tidak ada file media ditemukan di Storage.")
         return
     markup = InlineKeyboardMarkup()
-    for f in files:
+    for i, f in enumerate(files):
         basename = os.path.basename(f)
-        markup.add(InlineKeyboardButton(f"🎤 {basename[:40]}", callback_data=f"do_demucs|{f}"))
+        markup.add(InlineKeyboardButton(f"🎤 {basename[:40]}", callback_data=f"do_demucs|{i}"))
+    # Store file list in user_data for callback lookup
+    if not hasattr(bot, 'user_data'):
+        bot.user_data = {}
+    bot.user_data[message.chat.id] = {'files': files, 'last_cmd': 'demucs'}
     bot.reply_to(message, "🎶 *Pilih file yang ingin dipisah vokalnya:*", parse_mode="Markdown", reply_markup=markup)
 
 @bot.message_handler(commands=['kompres'])
@@ -278,9 +283,12 @@ def kompres_cmd(message):
         bot.reply_to(message, "❌ Tidak ada file media ditemukan di Storage.")
         return
     markup = InlineKeyboardMarkup()
-    for f in files:
+    for i, f in enumerate(files):
         basename = os.path.basename(f)
-        markup.add(InlineKeyboardButton(f"🗜️ {basename[:40]}", callback_data=f"do_kompres|{f}"))
+        markup.add(InlineKeyboardButton(f"🗜️ {basename[:40]}", callback_data=f"do_kompres|{i}"))
+    if not hasattr(bot, 'user_data'):
+        bot.user_data = {}
+    bot.user_data[message.chat.id] = {'files': files, 'last_cmd': 'kompres'}
     bot.reply_to(message, "🗜️ *Pilih file yang ingin dikompres:*", parse_mode="Markdown", reply_markup=markup)
 
 @bot.message_handler(commands=['video'])
@@ -794,13 +802,6 @@ Chat: {history_context}"""
     except Exception as e:
         bot.reply_to(message, f"❌ Terjadi kesalahan: {str(e)}")
 
-try:
-    bot.remove_webhook()
-    time.sleep(1)
-except Exception:
-    pass
-
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith('cmd_'))
 def callback_query(call):
     cmd = call.data
@@ -834,13 +835,23 @@ def callback_query(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('do_demucs|') or call.data.startswith('do_kompres|'))
 def process_specific_file(call):
-    cmd_type, filepath = call.data.split('|', 1)
-    if not os.path.exists(filepath):
+    cmd_type, idx_str = call.data.split('|', 1)
+    # Look up file path from stored user_data
+    chat_id = call.message.chat.id
+    user_data = getattr(bot, 'user_data', {}).get(chat_id, {})
+    files = user_data.get('files', [])
+    try:
+        idx = int(idx_str)
+        filepath = files[idx] if 0 <= idx < len(files) else ''
+    except (ValueError, IndexError):
+        filepath = ''
+    
+    if not filepath or not os.path.exists(filepath):
         bot.answer_callback_query(call.id, "File sudah tidak ada di server!")
         return
     
     bot.answer_callback_query(call.id, "Memulai proses background...")
-    msg = bot.send_message(call.message.chat.id, f"⏳ *Mempersiapkan tugas...*\n📍 `{os.path.basename(filepath)}`", parse_mode="Markdown")
+    msg = bot.send_message(chat_id, f"⏳ *Mempersiapkan tugas...*\n📍 `{os.path.basename(filepath)}`", parse_mode="Markdown")
     
     import subprocess, time, re, shutil
     
@@ -1035,5 +1046,10 @@ def search_page_callback(call):
     _safe_submit_task(_paginate)
 
 if __name__ == "__main__":
+    try:
+        bot.remove_webhook()
+        time.sleep(1)
+    except Exception:
+        pass
     print("Telegram Bot ZDT berjalan. Menunggu pesan masuk...")
     bot.infinity_polling()

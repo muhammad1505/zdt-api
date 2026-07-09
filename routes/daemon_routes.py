@@ -185,25 +185,24 @@ def server_tools():
 
             def do_clean():
                 import re
-                logf = open(log_path, 'a')
-                for root, _, files in os.walk(work_dir):
-                    for f in files:
-                        ext = os.path.splitext(f)[1].lower()
-                        if ext not in {'.mp3', '.m4a', '.flac', '.wav', '.mp4', '.mkv', '.webm', '.ogg', '.opus'}:
-                            continue
-                        name, ext = os.path.splitext(f)
-                        cleaned = re.sub(r'\s*\[(ZDT|yt)\].*', '', name, flags=re.IGNORECASE)
-                        cleaned = re.sub(r'\s*-\s*ZDT\s*$', '', cleaned, flags=re.IGNORECASE)
-                        cleaned = re.sub(r'\s*zdt\s*$', '', cleaned, flags=re.IGNORECASE)
-                        cleaned = cleaned.strip()
-                        if cleaned and cleaned != name:
-                            old = os.path.join(root, f)
-                            new = os.path.join(root, cleaned + ext)
-                            if not os.path.exists(new):
-                                os.rename(old, new)
-                                logf.write(f'Renamed: {f} -> {cleaned + ext}\n')
-                logf.write('Clean task done\n')
-                logf.close()
+                with open(log_path, 'a') as logf:
+                    for root, _, files in os.walk(work_dir):
+                        for f in files:
+                            ext = os.path.splitext(f)[1].lower()
+                            if ext not in {'.mp3', '.m4a', '.flac', '.wav', '.mp4', '.mkv', '.webm', '.ogg', '.opus'}:
+                                continue
+                            name, ext = os.path.splitext(f)
+                            cleaned = re.sub(r'\s*\[(ZDT|yt)\].*', '', name, flags=re.IGNORECASE)
+                            cleaned = re.sub(r'\s*-\s*ZDT\s*$', '', cleaned, flags=re.IGNORECASE)
+                            cleaned = re.sub(r'\s*zdt\s*$', '', cleaned, flags=re.IGNORECASE)
+                            cleaned = cleaned.strip()
+                            if cleaned and cleaned != name:
+                                old = os.path.join(root, f)
+                                new = os.path.join(root, cleaned + ext)
+                                if not os.path.exists(new):
+                                    os.rename(old, new)
+                                    logf.write(f'Renamed: {f} -> {cleaned + ext}\n')
+                    logf.write('Clean task done\n')
 
             import threading
             t = threading.Thread(target=do_clean, daemon=True)
@@ -228,37 +227,38 @@ def server_tools():
 
             def do_sync():
                 import re
-                logf = open(log_path, 'a')
-                artist_cache = {}
-                for root, _, files in os.walk(work_dir):
-                    for f in sorted(files):
-                        if not f.lower().endswith('.mp3'):
-                            continue
-                        lrc_path = os.path.join(root, os.path.splitext(f)[0] + '.lrc')
-                        if os.path.exists(lrc_path):
-                            continue
-                        try:
-                            from mutagen import File as MFile
-                            audio = MFile(os.path.join(root, f))
-                            if audio is None:
+                with open(log_path, 'a') as logf:
+                    artist_cache = {}
+                    for root, _, files in os.walk(work_dir):
+                        for f in sorted(files):
+                            if not f.lower().endswith('.mp3'):
                                 continue
-                            tags = audio
-                            artist = str(tags.get('artist', [b''])[0], 'utf-8') if tags.get('artist') else ''
-                            title = str(tags.get('title', [b''])[0], 'utf-8') if tags.get('title') else ''
-                            if not title:
-                                title = os.path.splitext(f)[0]
-                            query = f'{artist} {title}' if artist else title
-                            lrc = _fetch_lrc(query, artist_cache)
-                            if lrc:
-                                with open(lrc_path, 'w') as lf:
-                                    lf.write(lrc)
-                                logf.write(f'Lyrics saved: {os.path.basename(lrc_path)}\n')
-                            else:
-                                logf.write(f'No lyrics found: {f}\n')
-                        except Exception as e:
-                            logf.write(f'Error processing {f}: {e}\n')
-                logf.write('Sync lyrics done\n')
-                logf.close()
+                            lrc_path = os.path.join(root, os.path.splitext(f)[0] + '.lrc')
+                            if os.path.exists(lrc_path):
+                                continue
+                            try:
+                                from mutagen import File as MFile
+                                audio = MFile(os.path.join(root, f))
+                                if audio is None:
+                                    continue
+                                tags = audio
+                                artist_tag = tags.get('artist') or tags.get('TPE1')
+                                artist = str(artist_tag[0]) if artist_tag else ''
+                                title_tag = tags.get('title') or tags.get('TIT2')
+                                title = str(title_tag[0]) if title_tag else ''
+                                if not title:
+                                    title = os.path.splitext(f)[0]
+                                query = f'{artist} {title}' if artist else title
+                                lrc = _fetch_lrc(query, artist_cache)
+                                if lrc:
+                                    with open(lrc_path, 'w') as lf:
+                                        lf.write(lrc)
+                                    logf.write(f'Lyrics saved: {os.path.basename(lrc_path)}\n')
+                                else:
+                                    logf.write(f'No lyrics found: {f}\n')
+                            except Exception as e:
+                                logf.write(f'Error processing {f}: {e}\n')
+                    logf.write('Sync lyrics done\n')
 
             def _fetch_lrc(query: str, cache: dict) -> str | None:
                 import requests
@@ -316,7 +316,7 @@ def server_tools():
                     cmd = ['ffmpeg', '-i', file_path, '-vcodec', 'libx264', '-crf', '28', output]
                 else:
                     cmd = ['ffmpeg', '-i', file_path, '-b:a', '128k', output]
-                with open(log_path, 'w') as log_file:
+                with open(log_path, 'a') as log_file:
                     subprocess.Popen(
                         cmd,
                         stdout=log_file,
@@ -429,7 +429,9 @@ def server_tools():
                     except Exception:
                         pass
                     try:
-                        shutil.rmtree(os.path.join(base_dir, 'htdemucs'))
+                        parent_htdemucs = os.path.join(base_dir, 'htdemucs')
+                        if os.path.isdir(parent_htdemucs) and not os.listdir(parent_htdemucs):
+                            os.rmdir(parent_htdemucs)
                     except Exception:
                         pass
 
@@ -457,19 +459,18 @@ def server_tools():
             work_dir = resolve_path(subpath)
 
             def do_delete():
-                logf = open(log_path, 'a')
-                exts = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.mp4', '.mkv', '.webm'}
-                count = 0
-                try:
-                    for root, _, files in os.walk(work_dir):
-                        for f in files:
-                            if os.path.splitext(f)[1].lower() in exts:
-                                os.remove(os.path.join(root, f))
-                                count += 1
-                    logf.write(f'Deleted {count} media files\n')
-                except Exception as e:
-                    logf.write(f'Delete error: {e}\n')
-                logf.close()
+                with open(log_path, 'a') as logf:
+                    exts = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.mp4', '.mkv', '.webm'}
+                    count = 0
+                    try:
+                        for root, _, files in os.walk(work_dir):
+                            for f in files:
+                                if os.path.splitext(f)[1].lower() in exts:
+                                    os.remove(os.path.join(root, f))
+                                    count += 1
+                        logf.write(f'Deleted {count} media files\n')
+                    except Exception as e:
+                        logf.write(f'Delete error: {e}\n')
 
             import threading
             t = threading.Thread(target=do_delete, daemon=True)
