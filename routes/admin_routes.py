@@ -307,6 +307,31 @@ def update_config():
         return jsonify({'error': str(e)}), 500
 
 
+@admin_bp.route('/api/admin/notifications/last-seen', methods=['GET'])
+@requires_admin
+def get_last_seen():
+    """Get the user's last seen notification ID (persisted across sessions)."""
+    from database import get_last_seen_notif_id
+    user_id = g.user.get('user_id', 0) if hasattr(g, 'user') else 0
+    last_id = get_last_seen_notif_id(user_id)
+    return jsonify({'last_seen_id': last_id})
+
+
+@admin_bp.route('/api/admin/notifications/last-seen', methods=['POST'])
+@requires_admin
+def set_last_seen():
+    """Save the user's last seen notification ID."""
+    try:
+        data = request.get_json(silent=True) or {}
+        notif_id = int(data.get('last_seen_id', 0))
+        from database import set_last_seen_notif_id
+        user_id = g.user.get('user_id', 0) if hasattr(g, 'user') else 0
+        set_last_seen_notif_id(user_id, notif_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @admin_bp.route('/api/admin/notifications/settings', methods=['GET'])
 @requires_admin
 def get_notif_settings():

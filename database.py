@@ -528,6 +528,34 @@ def save_notification_settings(data: dict):
     conn.commit()
 
 
+# === LAST SEEN NOTIFICATION ID (persisted per user) ===
+
+def get_last_seen_notif_id(user_id: int) -> int:
+    """Get the last seen notification ID for a user."""
+    conn = get_connection()
+    key = f'notif_last_seen_{user_id}'
+    row = conn.execute('SELECT value FROM settings WHERE key = ?', (key,)).fetchone()
+    if row:
+        try:
+            return int(row['value'])
+        except (ValueError, TypeError):
+            pass
+    return 0
+
+
+def set_last_seen_notif_id(user_id: int, notif_id: int):
+    """Save the last seen notification ID for a user."""
+    if notif_id < 1:
+        return
+    conn = get_connection()
+    key = f'notif_last_seen_{user_id}'
+    conn.execute(
+        'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
+        (key, str(notif_id))
+    )
+    conn.commit()
+
+
 def backup_database():
     db_path = get_db_path()
     if not os.path.exists(db_path):

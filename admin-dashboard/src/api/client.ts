@@ -294,6 +294,16 @@ export const saveNotifSettings = async (data: { sound?: boolean; desktop?: boole
   return res.data;
 };
 
+export const getLastSeenNotifId = async () => {
+  const res = await api.get('/api/admin/notifications/last-seen');
+  return res.data;
+};
+
+export const setLastSeenNotifId = async (last_seen_id: number) => {
+  const res = await api.post('/api/admin/notifications/last-seen', { last_seen_id });
+  return res.data;
+};
+
 // === DEPENDENCIES ===
 
 export const getDependencies = async () => {

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useSidebar } from '../context/SidebarContext';
-import api, { getProfile, updateProfile, changePassword, getNotifSettings, saveNotifSettings } from '../api/client';
+import api, { getProfile, updateProfile, changePassword, getNotifSettings, saveNotifSettings, getLastSeenNotifId, setLastSeenNotifId } from '../api/client';
 
 interface Props {
   username: string;
@@ -127,6 +127,15 @@ export default function AppHeader({ username, onLogout }: Props) {
     });
   }, []);
 
+  // Load last seen notification ID from backend on mount (cross-session unread tracking)
+  useEffect(() => {
+    getLastSeenNotifId().then(data => {
+      if (data.last_seen_id > 0) {
+        lastNotifId.current = data.last_seen_id;
+      }
+    }).catch(() => {});
+  }, []);
+
   // Notification sound using Web Audio API (no external file needed)
   const playNotifSound = useCallback(() => {
     if (!notifSoundEnabled) return;
@@ -208,6 +217,10 @@ export default function AppHeader({ username, onLogout }: Props) {
       api.get('/api/admin/notifications?limit=20').then(res => {
         setNotifications(res.data.notifications || []);
       }).catch(() => {});
+      // Persist last seen ID to backend so unread count survives page refresh
+      if (lastNotifId.current > 0) {
+        setLastSeenNotifId(lastNotifId.current).catch(() => {});
+      }
     }
   }, [notifOpen]);
 
