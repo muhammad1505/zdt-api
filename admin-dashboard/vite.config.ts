@@ -16,5 +16,13 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'api-client': ['./src/api/client.ts'],
+          'vendor': ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
   },
 });

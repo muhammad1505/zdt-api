@@ -5,6 +5,20 @@ import { RefreshCw } from 'lucide-react';
 export default function LogsPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  // Track scroll position for "Go to top" button
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -45,7 +59,23 @@ export default function LogsPage() {
 
       <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] overflow-hidden">
         {loading ? (
-          <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">Loading...</div>
+          <div className="animate-pulse">
+            {/* Skeleton header */}
+            <div className="flex gap-4 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+              {[120, 70, 200, 60].map((w, i) => (
+                <div key={i} className="h-3 bg-gray-200 dark:bg-gray-700 rounded" style={{ width: w }} />
+              ))}
+            </div>
+            {/* Skeleton rows */}
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="flex gap-4 px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+                <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded" style={{ width: 120 }} />
+                <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded" style={{ width: 70 }} />
+                <div className="h-3 flex-1 bg-gray-100 dark:bg-gray-800 rounded" />
+                <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded" style={{ width: 60 }} />
+              </div>
+            ))}
+          </div>
         ) : logs.length === 0 ? (
           <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">No activity yet</div>
         ) : (
@@ -81,6 +111,18 @@ export default function LogsPage() {
           </div>
         )}
       </div>
+      {/* Scroll to top button */}
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full bg-brand-500 text-white shadow-lg hover:bg-brand-600 transition-all duration-200 border-none cursor-pointer flex items-center justify-center"
+          title="Go to top"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="18 15 12 9 6 15" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
