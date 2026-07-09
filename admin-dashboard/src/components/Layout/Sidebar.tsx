@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Folder, Key, Users, Wrench, Sliders, ScrollText,
+  LayoutDashboard, Folder, Key, Users, Wrench, Sliders, ScrollText, Bell,
   Server, Menu, X
 } from 'lucide-react';
 import { useSidebar } from '../../context/SidebarContext';
@@ -14,6 +14,7 @@ const mainItems = [
   { to: '/tools', icon: Wrench, label: 'Tools', adminOnly: false },
   { to: '/settings', icon: Sliders, label: 'Settings', adminOnly: true },
   { to: '/logs', icon: ScrollText, label: 'Logs', adminOnly: false },
+  { to: '/notifications', icon: Bell, label: 'Notif History', adminOnly: false },
 ];
 
 export default function Sidebar({ userRole = 'operator' }: { userRole?: string }) {

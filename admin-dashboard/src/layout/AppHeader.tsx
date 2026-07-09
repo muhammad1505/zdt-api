@@ -393,7 +393,7 @@ export default function AppHeader({ username, onLogout }: Props) {
                   </div>
                 </div>
                 {/* Notification preferences toggles */}
-                <div className="px-4 pb-3 mb-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3 text-xs">
+                <div className="px-4 pb-3 mb-2 border-b border-gray-100 dark:border-gray-800 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
                   <label className="flex items-center gap-1.5 cursor-pointer select-none text-gray-500 dark:text-gray-400">
                     <input type="checkbox" checked={notifSoundEnabled}
                       onChange={(e) => {
@@ -416,6 +416,23 @@ export default function AppHeader({ username, onLogout }: Props) {
                       className="w-3.5 h-3.5 accent-amber-500" />
                     Desktop
                   </label>
+                  <button
+                    onClick={() => {
+                      const cats = ['errors', 'downloads', 'files', 'users', 'vpn', 'services', 'keys', 'auth', 'tools'];
+                      let i = 0;
+                      const playNext = () => {
+                        if (i >= cats.length) return;
+                        playNotifSound(cats[i]);
+                        i++;
+                        setTimeout(playNext, 500);
+                      };
+                      playNext();
+                    }}
+                    className="text-xs text-gray-400 hover:text-brand-500 dark:hover:text-brand-400 bg-transparent border border-gray-200 dark:border-gray-700 rounded px-2 py-0.5 cursor-pointer transition-colors"
+                    title="Test all notification sounds"
+                  >
+                    Test sounds
+                  </button>
                 </div>
                 {notifications.length === 0 ? (
                   <div className="px-4 py-6 text-center text-xs text-gray-400">No notifications</div>

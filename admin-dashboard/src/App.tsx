@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage';
 import ApiKeysPage from './pages/ApiKeysPage';
 import UsersPage from './pages/UsersPage';
 import LogsPage from './pages/LogsPage';
+import NotificationsPage from './pages/NotificationsPage';
 import ToolsPage from './pages/ToolsPage';
 import SettingsPage from './pages/SettingsPage';
 import FilesPage from './pages/FilesPage';
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/tools" element={<ProtectedRoute isAuthenticated={isAuthenticated}><ToolsPage /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute isAuthenticated={isAuthenticated}><SettingsPage /></ProtectedRoute>} />
           <Route path="/logs" element={<ProtectedRoute isAuthenticated={isAuthenticated}><LogsPage /></ProtectedRoute>} />
+          <Route path="/notifications" element={<ProtectedRoute isAuthenticated={isAuthenticated}><NotificationsPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
