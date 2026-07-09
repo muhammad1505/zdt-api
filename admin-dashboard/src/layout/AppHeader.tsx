@@ -255,14 +255,24 @@ export default function AppHeader({ username, onLogout }: Props) {
 
         <div className="flex items-center gap-1.5 ml-auto">
           {/* Theme Toggle */}
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors border-none cursor-pointer"
-            aria-label="Toggle theme"
-            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {isDark ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
+          <div className="relative group">
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors border-none cursor-pointer"
+              aria-label="Toggle theme"
+              title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {isDark ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            {/* Persistence indicator tooltip */}
+            <div className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-success-500 border border-white dark:border-gray-900"
+              title="Theme saved to localStorage"
+            />
+            {/* Tooltip on hover */}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 rounded bg-gray-900 dark:bg-gray-700 text-white text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-sm">
+              {isDark ? 'Dark mode' : 'Light mode'} · Press <kbd className="px-1 py-0.5 rounded bg-gray-700 dark:bg-gray-600 text-[9px] font-mono">T</kbd>
+            </div>
+          </div>
 
           {/* Notification Bell */}
           <div className="relative" ref={notifRef}>

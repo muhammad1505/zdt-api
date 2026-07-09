@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getActivityLogs } from '../api/client';
-import { RefreshCw } from 'lucide-react';
+import { getActivityLogs, clearActivityLogs } from '../api/client';
+import { RefreshCw, Trash2, Download } from 'lucide-react';
 import { fmtTime } from '../utils/notifications';
+import Swal from 'sweetalert2';
 
 type LogFilter = 'all' | 'errors' | 'success';
 
@@ -68,10 +69,69 @@ export default function LogsPage() {
           <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Activity Logs</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Track API requests and system activity</p>
         </div>
-        <button onClick={fetchLogs} disabled={loading}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer disabled:opacity-50">
-          <RefreshCw size={16} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={fetchLogs} disabled={loading}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer disabled:opacity-50">
+            <RefreshCw size={16} /> Refresh
+          </button>
+          {!loading && logs.length > 0 && (
+            <>
+              <button
+                onClick={() => {
+                  // Export as CSV
+                  const headers = ['Time', 'Relative', 'Method', 'Endpoint', 'Status', 'IP Address'];
+                  const rows = logs.map((l: any) => [
+                    new Date(l.created_at).toISOString(),
+                    fmtTime(l.created_at),
+                    l.method,
+                    l.endpoint,
+                    l.status_code,
+                    l.ip_address || '-'
+                  ]);
+                  const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `zdt-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 text-sm hover:text-brand-500 dark:hover:text-brand-400 hover:border-brand-200 dark:hover:border-brand-700 transition-colors bg-transparent cursor-pointer"
+                title="Export as CSV"
+              >
+                <Download size={14} />
+                <span className="hidden sm:inline text-xs">Export</span>
+              </button>
+              <button
+                onClick={async () => {
+                  const res = await Swal.fire({
+                    title: 'Clear all logs?',
+                    text: 'This action cannot be undone',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#f04438',
+                    cancelButtonColor: '#667085',
+                    confirmButtonText: 'Clear',
+                    background: '#ffffff',
+                    color: '#1d2939',
+                  });
+                  if (!res.isConfirmed) return;
+                  try {
+                    await clearActivityLogs();
+                    setLogs([]);
+                    Swal.fire({ icon: 'success', title: 'Logs cleared', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000, background: '#ffffff', color: '#1d2939' });
+                  } catch {}
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 text-sm hover:text-error-500 dark:hover:text-error-400 hover:border-error-200 dark:hover:border-error-700 transition-colors bg-transparent cursor-pointer"
+                title="Clear all activity logs"
+              >
+                <Trash2 size={14} />
+                <span className="hidden sm:inline text-xs">Clear</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Filter chips */}
@@ -103,7 +163,7 @@ export default function LogsPage() {
           <div className="animate-pulse">
             {/* Skeleton header */}
             <div className="flex gap-4 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
-              {[120, 70, 200, 60].map((w, i) => (
+              {[120, 70, 200, 60, 120].map((w, i) => (
                 <div key={i} className="h-3 bg-gray-200 dark:bg-gray-700 rounded" style={{ width: w }} />
               ))}
             </div>
@@ -114,6 +174,7 @@ export default function LogsPage() {
                 <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded" style={{ width: 70 }} />
                 <div className="h-3 flex-1 bg-gray-100 dark:bg-gray-800 rounded" />
                 <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded" style={{ width: 60 }} />
+                <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded" style={{ width: 120 }} />
               </div>
             ))}
           </div>
@@ -130,6 +191,7 @@ export default function LogsPage() {
                   <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Method</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Endpoint</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">IP Address</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -148,6 +210,7 @@ export default function LogsPage() {
                     <td className={`py-2.5 px-4 text-right text-xs font-mono font-medium ${
                       log.status_code >= 400 ? 'text-error-600 dark:text-error-500' : 'text-success-600 dark:text-success-500'
                     }`}>{log.status_code}</td>
+                    <td className="py-2.5 px-4 text-xs text-gray-400 dark:text-gray-500 font-mono">{log.ip_address || '-'}</td>
                   </tr>
                 ))}
               </tbody>
