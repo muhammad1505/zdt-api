@@ -500,6 +500,34 @@ def get_vpn_latest_event():
 
 # === DATABASE BACKUP ===
 
+# === NOTIFICATION SETTINGS ===
+
+def get_notification_settings():
+    """Get notification preferences from settings table."""
+    conn = get_connection()
+    rows = conn.execute(
+        'SELECT key, value FROM settings WHERE key IN (?, ?)',
+        ('notif_sound', 'notif_desktop')
+    ).fetchall()
+    result = {'notif_sound': 'true', 'notif_desktop': 'true'}
+    for row in rows:
+        result[row['key']] = row['value']
+    return result
+
+
+def save_notification_settings(data: dict):
+    """Save notification preferences to settings table."""
+    conn = get_connection()
+    for key in ('notif_sound', 'notif_desktop'):
+        if key in data:
+            val = 'true' if data[key] else 'false'
+            conn.execute(
+                'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
+                (key, val)
+            )
+    conn.commit()
+
+
 def backup_database():
     db_path = get_db_path()
     if not os.path.exists(db_path):

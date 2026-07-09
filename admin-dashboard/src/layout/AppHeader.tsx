@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useSidebar } from '../context/SidebarContext';
-import api, { getProfile, updateProfile, changePassword } from '../api/client';
+import api, { getProfile, updateProfile, changePassword, getNotifSettings, saveNotifSettings } from '../api/client';
 
 interface Props {
   username: string;
@@ -15,26 +15,6 @@ interface Activity {
   ip_address: string;
   status_code: number;
   created_at: string;
-}
-
-function isImportant(a: Activity): boolean {
-  if (a.status_code >= 400) return true;
-  const ep = a.endpoint.toLowerCase();
-  const method = a.method.toUpperCase();
-  if (['POST', 'PUT', 'DELETE'].includes(method)) {
-    if (ep.includes('/api/files') || ep.includes('/api/upload')) return true;
-    if (ep.includes('/api/settings') || ep.includes('/api/admin/config')) return true;
-    if (ep.includes('/api/download')) return true;
-    if (ep.includes('/api/admin/users') || ep.includes('/api/login') || ep.includes('/api/profile')) return true;
-    if (ep.includes('/api/admin/vpn')) return true;
-    if (ep.includes('/api/admin/services') || ep.includes('/api/admin/system')) return true;
-    if (ep.includes('/api/daemon') || ep.includes('/api/admin/dependencies')) return true;
-    if (ep.includes('/api/tools')) return true;
-    if (ep.includes('/api/admin/keys') || ep.includes('/api/settings/ai-keys')) return true;
-    if (ep.includes('/api/admin/vpn')) return true;
-    if (ep.includes('/api/notify')) return true;
-  }
-  return false;
 }
 
 function fmtTime(ts: string) {
@@ -127,13 +107,25 @@ export default function AppHeader({ username, onLogout }: Props) {
     return () => document.removeEventListener('mousedown', handle);
   }, []);
 
-  // Notification preferences (persisted in localStorage)
+  // Notification preferences (synced with backend + localStorage fallback)
   const [notifSoundEnabled, setNotifSoundEnabled] = useState(
     localStorage.getItem('zdt_notif_sound') !== 'false'
   );
   const [notifDesktopEnabled, setNotifDesktopEnabled] = useState(
     localStorage.getItem('zdt_notif_desktop') !== 'false'
   );
+
+  // Load notification settings from backend on mount (override localStorage)
+  useEffect(() => {
+    getNotifSettings().then(settings => {
+      setNotifSoundEnabled(settings.sound);
+      setNotifDesktopEnabled(settings.desktop);
+      localStorage.setItem('zdt_notif_sound', String(settings.sound));
+      localStorage.setItem('zdt_notif_desktop', String(settings.desktop));
+    }).catch(() => {
+      // Fallback — keep localStorage values
+    });
+  }, []);
 
   // Notification sound using Web Audio API (no external file needed)
   const playNotifSound = useCallback(() => {
@@ -166,24 +158,28 @@ export default function AppHeader({ username, onLogout }: Props) {
     notifOpenRef.current = notifOpen;
   }, [notifOpen]);
 
-  // Real-time notification polling every 15 seconds
+  // Real-time notification polling every 15 seconds (backend-filtered)
   useEffect(() => {
     const fetchNotifs = async () => {
       try {
-        const res = await api.get('/api/admin/activity?limit=20');
-        const items: Activity[] = res.data.logs || res.data.activities || [];
-        const important = items.filter(isImportant).slice(0, 10);
-        setNotifications(important);
+        const since = lastNotifId.current > 0 ? `&since_id=${lastNotifId.current}` : '';
+        const res = await api.get(`/api/admin/notifications?limit=20${since}`);
+        const items: Activity[] = res.data.notifications || [];
+        const unread = res.data.unread_count || 0;
+        const maxId = res.data.max_id || 0;
 
-        // Track unread count since last seen — use ref to avoid stale closure
-        if (important.length > 0) {
-          const maxId = Math.max(...important.map(n => n.id));
-          if (lastNotifId.current > 0 && maxId > lastNotifId.current && !notifOpenRef.current) {
-            setUnreadCount(prev => prev + 1);
-            // Play sound + desktop notification for new important events
-            playNotifSound();
-            const newNotif = important.find(n => n.id === maxId) || important[0];
-            if (notifDesktopEnabled && newNotif && 'Notification' in window && Notification.permission === 'granted') {
+        setNotifications(items);
+        if (maxId > lastNotifId.current) {
+          lastNotifId.current = maxId;
+        }
+
+        // Update unread count from server, play sound if new
+        if (unread > 0 && !notifOpenRef.current) {
+          setUnreadCount(prev => prev + unread);
+          playNotifSound();
+          if (notifDesktopEnabled && 'Notification' in window && Notification.permission === 'granted') {
+            const newNotif = items.length > 0 ? items[0] : null;
+            if (newNotif) {
               const isError = newNotif.status_code >= 400;
               new Notification('ZDT API' + (isError ? ' ⚠️' : ''), {
                 body: eventLabel(newNotif),
@@ -192,7 +188,6 @@ export default function AppHeader({ username, onLogout }: Props) {
               });
             }
           }
-          lastNotifId.current = maxId;
         }
       } catch {}
     };
@@ -203,16 +198,15 @@ export default function AppHeader({ username, onLogout }: Props) {
     // Poll every 15 seconds
     const interval = setInterval(fetchNotifs, 15000);
     return () => clearInterval(interval);
-  }, [playNotifSound]);
+  }, [playNotifSound, notifDesktopEnabled]);
 
   // Reset unread count when notification panel opens
   useEffect(() => {
     if (notifOpen) {
       setUnreadCount(0);
-      // Refresh notifications when opening
-      api.get('/api/admin/activity?limit=20').then(res => {
-        const items = res.data.logs || res.data.activities || [];
-        setNotifications(items.filter(isImportant).slice(0, 10));
+      // Refresh notifications when opening (no unread since it's just opened)
+      api.get('/api/admin/notifications?limit=20').then(res => {
+        setNotifications(res.data.notifications || []);
       }).catch(() => {});
     }
   }, [notifOpen]);
@@ -312,6 +306,7 @@ export default function AppHeader({ username, onLogout }: Props) {
                         const v = e.target.checked;
                         setNotifSoundEnabled(v);
                         localStorage.setItem('zdt_notif_sound', String(v));
+                        saveNotifSettings({ sound: v }).catch(() => {});
                       }}
                       className="w-3.5 h-3.5 accent-amber-500" />
                     Sound
@@ -322,6 +317,7 @@ export default function AppHeader({ username, onLogout }: Props) {
                         const v = e.target.checked;
                         setNotifDesktopEnabled(v);
                         localStorage.setItem('zdt_notif_desktop', String(v));
+                        saveNotifSettings({ desktop: v }).catch(() => {});
                       }}
                       className="w-3.5 h-3.5 accent-amber-500" />
                     Desktop

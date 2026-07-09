@@ -282,6 +282,18 @@ export const saveSchedulerPlaylist = async (data: Record<string, any>) => {
   return res.data;
 };
 
+// === NOTIFICATION SETTINGS ===
+
+export const getNotifSettings = async () => {
+  const res = await api.get('/api/admin/notifications/settings');
+  return res.data;
+};
+
+export const saveNotifSettings = async (data: { sound?: boolean; desktop?: boolean }) => {
+  const res = await api.post('/api/admin/notifications/settings', data);
+  return res.data;
+};
+
 // === DEPENDENCIES ===
 
 export const getDependencies = async () => {

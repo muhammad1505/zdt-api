@@ -307,6 +307,36 @@ def update_config():
         return jsonify({'error': str(e)}), 500
 
 
+@admin_bp.route('/api/admin/notifications/settings', methods=['GET'])
+@requires_admin
+def get_notif_settings():
+    """Get notification preferences (sound, desktop)."""
+    from database import get_notification_settings
+    settings = get_notification_settings()
+    return jsonify({
+        'sound': settings.get('notif_sound', 'true') == 'true',
+        'desktop': settings.get('notif_desktop', 'true') == 'true'
+    })
+
+
+@admin_bp.route('/api/admin/notifications/settings', methods=['POST'])
+@requires_admin
+def save_notif_settings():
+    """Save notification preferences (sound, desktop)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        from database import save_notification_settings
+        save_data = {}
+        if 'sound' in data:
+            save_data['notif_sound'] = data['sound']
+        if 'desktop' in data:
+            save_data['notif_desktop'] = data['desktop']
+        save_notification_settings(save_data)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @admin_bp.route('/api/admin/notifications', methods=['GET'])
 @requires_admin
 def notifications():
