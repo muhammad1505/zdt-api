@@ -8,7 +8,10 @@ export interface Activity {
 }
 
 export function fmtTime(ts: string): string {
-  const d = new Date(ts);
+  // Normalize SQLite datetime format (space-separated) to ISO 8601 for Safari compatibility
+  const normalized = ts.replace(' ', 'T') + (ts.includes('Z') || ts.includes('+') ? '' : 'Z');
+  const d = new Date(normalized);
+  if (isNaN(d.getTime())) return ts;
   const now = new Date();
   const diff = now.getTime() - d.getTime();
   if (diff < 60000) return 'just now';
@@ -47,7 +50,8 @@ export function eventLabel(a: Activity): string {
     if (a.method === 'DELETE') return ok ? (name ? `User dihapus: ${name}` : 'User dihapus') : 'Gagal hapus user';
     return ok ? (name ? `User diupdate: ${name}` : 'User diupdate') : 'Gagal update user';
   }
-  if (ep.includes('/api/profile')) return a.method === 'PUT' ? (ok ? 'Profile updated' : 'Gagal update profile') : (ok ? 'Password diganti' : 'Gagal ganti password');
+  if (ep.includes('/api/profile/password')) return ok ? 'Password diganti' : 'Gagal ganti password';
+  if (ep.includes('/api/profile')) return a.method === 'PUT' ? (ok ? 'Profile updated' : 'Gagal update profile') : (ok ? 'Profile dilihat' : 'Gagal lihat profile');
   if (ep.includes('/api/login')) return ok ? 'Login berhasil' : 'Login gagal';
   if (ep.includes('/api/admin/vpn')) {
     if (ep.includes('disconnect')) return ok ? 'VPN disconnected' : 'VPN disconnect gagal';
@@ -171,5 +175,7 @@ export function playCategorySound(category: string): void {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + profile.duration);
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + profile.duration);
+    // Clean up AudioContext to prevent memory leak
+    osc.onended = () => ctx.close();
   } catch { /* Audio not supported */ }
 }

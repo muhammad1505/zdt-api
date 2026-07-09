@@ -6,7 +6,7 @@ import urllib.request
 import json as _json
 import logging
 
-from auth import requires_auth
+from auth import requires_auth, requires_admin
 from config import config
 from zdt_paths import ZdtPaths
 
@@ -15,7 +15,7 @@ settings_bp = Blueprint('settings', __name__)
 
 
 @settings_bp.route('/api/settings/storage', methods=['POST'])
-@requires_auth
+@requires_admin
 def update_storage():
     """Update target directory."""
     try:
@@ -149,7 +149,7 @@ def get_ai_keys():
 
 
 @settings_bp.route('/api/settings/ai-keys', methods=['POST'])
-@requires_auth
+@requires_admin
 def update_ai_keys():
     """Update AI API keys."""
     try:
@@ -319,7 +319,7 @@ def get_settings():
 
 
 @settings_bp.route('/api/settings', methods=['POST'])
-@requires_auth
+@requires_admin
 def update_settings():
     """Batch update settings with proper validation."""
     try:
@@ -498,7 +498,7 @@ def get_download_settings():
 
 
 @settings_bp.route('/api/settings/download', methods=['POST'])
-@requires_auth
+@requires_admin
 def update_download_settings():
     """Update download preferences."""
     try:
@@ -547,7 +547,7 @@ def get_telegram_settings():
 
 
 @settings_bp.route('/api/settings/telegram', methods=['POST'])
-@requires_auth
+@requires_admin
 def update_telegram_settings():
     """Update Telegram settings."""
     try:
@@ -590,7 +590,7 @@ def update_telegram_settings():
 
 
 @settings_bp.route('/api/settings/telegram/test', methods=['POST'])
-@requires_auth
+@requires_admin
 def test_telegram_settings():
     """Test Telegram notification delivery."""
     try:
@@ -656,7 +656,7 @@ def test_telegram_settings():
 
 
 @settings_bp.route('/api/notify/config', methods=['GET', 'POST'])
-@requires_auth
+@requires_admin
 def notify_config():
     """Get or set Telegram notification config (from zdt-web)."""
     if request.method == 'GET':
@@ -681,7 +681,7 @@ def notify_config():
 
 
 @settings_bp.route('/api/notify/test', methods=['POST'])
-@requires_auth
+@requires_admin
 def notify_test():
     """Send a test notification via Telegram (from zdt-web)."""
     try:

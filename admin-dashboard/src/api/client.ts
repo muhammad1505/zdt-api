@@ -27,6 +27,10 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401 || err.response?.status === 403) {
+      // Don't redirect on login requests — let the caller handle the error
+      if (err.config?.url === '/api/login') {
+        return Promise.reject(err);
+      }
       localStorage.removeItem('zdt_admin_token');
       localStorage.removeItem('zdt_admin_user');
       sessionStorage.setItem('zdt_redirect_path', window.location.pathname + window.location.search);

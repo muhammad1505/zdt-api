@@ -20,7 +20,7 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
-from server import create_app
+from server import app as server_app
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ZDT Web Dashboard (legacy wrapper)')
@@ -28,7 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default=5000, help='Port number (default: 5000)')
     args = parser.parse_args()
 
-    app = create_app()
+    app = server_app
     print(f"ZDT Unified API Server (legacy wrapper) running on {args.bind}:{args.port}")
     print(f"  → Admin Dashboard: http://localhost:{args.port}/admin/")
     print(f"  → API Health:      http://localhost:{args.port}/api/health")

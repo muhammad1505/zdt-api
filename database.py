@@ -153,40 +153,6 @@ def init_db():
             import logging
             logging.getLogger('zdt-api').error(f'Schema migration failed: {e}')
 
-    if cur_version < 2:
-        try:
-            conn.executescript('''
-                CREATE TABLE IF NOT EXISTS downloads (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    url TEXT NOT NULL,
-                    title TEXT,
-                    format TEXT DEFAULT 'auto',
-                    status TEXT NOT NULL DEFAULT 'queued',
-                    progress_percent INTEGER DEFAULT 0,
-                    file_path TEXT,
-                    file_size INTEGER,
-                    error_message TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    completed_at TIMESTAMP,
-                    created_by INTEGER REFERENCES users(id)
-                );
-                CREATE TABLE IF NOT EXISTS vpn_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    event_type TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'info',
-                    message TEXT,
-                    server TEXT,
-                    ip TEXT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            ''')
-            conn.execute('INSERT OR REPLACE INTO schema_version (version) VALUES (2)')
-            conn.commit()
-        except Exception as e:
-            import logging
-            logging.getLogger('zdt-api').error(f'Schema migration failed: {e}')
-
     conn.commit()
 
 
@@ -392,6 +358,9 @@ def create_user(username, password, role='operator', label=''):
 
 def delete_user(user_id):
     conn = get_connection()
+    # Nullify foreign keys before deleting the user
+    conn.execute('UPDATE activity_logs SET user_id = NULL WHERE user_id = ?', (user_id,))
+    conn.execute('UPDATE downloads SET created_by = NULL WHERE created_by = ?', (user_id,))
     conn.execute('DELETE FROM api_keys WHERE created_by = ?', (user_id,))
     conn.execute('DELETE FROM users WHERE id = ?', (user_id,))
     conn.commit()

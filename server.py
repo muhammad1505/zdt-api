@@ -14,6 +14,7 @@ from flask_cors import CORS
 
 # Import config at module level
 from config import config as app_config
+from auth import requires_auth
 
 # Set up logging with rotation
 from logging.handlers import RotatingFileHandler
@@ -213,9 +214,9 @@ def create_app():
             return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'favicon.svg')
 
         @app.route('/')
+        @requires_auth
         def zdt_web_home():
             from flask import render_template
-            from auth import generate_bearer_token
             token = generate_bearer_token(0, app_config.get_web_user(), 'admin')
             return render_template('dashboard.html', auto_token=token)
 

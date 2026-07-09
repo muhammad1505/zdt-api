@@ -1009,7 +1009,8 @@ def confirm_delete_callback(call):
     try:
         target_path = os.path.abspath(call.data.split(':', 1)[1])
         base_dir = os.path.abspath(get_target_dir())
-        if not target_path.startswith(base_dir):
+        # Use os.path.commonpath instead of startswith to prevent path traversal
+        if os.path.commonpath([base_dir, target_path]) != base_dir:
             bot.edit_message_text("❌ Path tidak diizinkan!", chat_id=call.message.chat.id, message_id=call.message.message_id)
             return
         if not os.path.exists(target_path):

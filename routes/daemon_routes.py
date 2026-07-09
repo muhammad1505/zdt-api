@@ -3,10 +3,11 @@ import subprocess
 import os
 import signal
 import shutil
+import threading
 import logging
 import json as _json
 
-from auth import requires_auth
+from auth import requires_auth, requires_admin
 from config import config
 from zdt_paths import ZdtPaths
 
@@ -92,7 +93,7 @@ def _stop_process(process_name):
 
 
 @daemon_bp.route('/api/daemon', methods=['POST'])
-@requires_auth
+@requires_admin
 def manage_daemon():
     """Start or stop daemon services."""
     try:
@@ -151,7 +152,7 @@ def manage_daemon():
 
 
 @daemon_bp.route('/api/tools', methods=['POST'])
-@requires_auth
+@requires_admin
 def server_tools():
     """Execute server tools (clean, compress, demucs, etc.)."""
     try:
@@ -169,7 +170,7 @@ def server_tools():
             real_target = os.path.realpath(target_dir)
             real_full = os.path.realpath(full)
             if os.path.commonpath([real_target, real_full]) != real_target:
-                return target_dir
+                raise PermissionError(f'Path traversal blocked: {relative}')
             return real_full
 
         def find_media_in(folder: str) -> list:
@@ -494,7 +495,7 @@ def server_tools():
 
 
 @daemon_bp.route('/api/scheduler/status', methods=['GET'])
-@requires_auth
+@requires_admin
 def scheduler_status():
     """Check if scheduler daemon is running (from zdt-web)."""
     try:
@@ -508,7 +509,7 @@ def scheduler_status():
 
 
 @daemon_bp.route('/api/scheduler/playlists', methods=['GET'])
-@requires_auth
+@requires_admin
 def scheduler_get_playlists():
     """Get scheduled playlist config (from zdt-web)."""
     try:
@@ -522,7 +523,7 @@ def scheduler_get_playlists():
 
 
 @daemon_bp.route('/api/scheduler/playlists', methods=['POST'])
-@requires_auth
+@requires_admin
 def scheduler_save_playlists():
     """Save playlist schedule config (from zdt-web)."""
     try:

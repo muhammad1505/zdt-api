@@ -11,7 +11,13 @@ interface AuthUser {
 export function useAuth() {
   const [user, setUser] = useState<AuthUser | null>(() => {
     const stored = localStorage.getItem('zdt_admin_user');
-    return stored ? JSON.parse(stored) : null;
+    if (!stored) return null;
+    try {
+      return JSON.parse(stored) as AuthUser;
+    } catch {
+      localStorage.removeItem('zdt_admin_user');
+      return null;
+    }
   });
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('zdt_admin_token'));
   const [loading, setLoading] = useState(false);

@@ -4,9 +4,9 @@ import subprocess
 import shutil
 import logging
 
-from auth import requires_auth
+from auth import requires_auth, requires_admin
 from config import config
-from database import get_downloads, clear_download_history
+from database import get_downloads, clear_download_history, get_connection
 from zdt_paths import ZdtPaths
 
 logger = logging.getLogger(__name__)
@@ -29,17 +29,17 @@ def get_stats():
 
         downloads_list, total = get_downloads(page, per_page, 'all')
 
-        # Compute aggregate stats
-        total_size_bytes = sum(
-            d.get('file_size', 0) or 0
-            for d in downloads_list
-            if d.get('status') == 'completed'
-        )
+        # Compute aggregate stats from ALL downloads, not just paginated page
+        conn = get_connection()
+        total_size_bytes = conn.execute(
+            "SELECT COALESCE(SUM(file_size), 0) FROM downloads WHERE status = 'completed'"
+        ).fetchone()[0]
 
-        # Source breakdown by URL pattern
+        # Source breakdown from all downloads
+        all_urls = conn.execute('SELECT url FROM downloads').fetchall()
         sources = {'spotify': 0, 'youtube': 0, 'other': 0}
-        for d in downloads_list:
-            url = (d.get('url') or '').lower()
+        for row in all_urls:
+            url = (row['url'] or '').lower()
             if 'spotify.com' in url:
                 sources['spotify'] += 1
             elif 'youtube.com' in url or 'youtu.be' in url:
