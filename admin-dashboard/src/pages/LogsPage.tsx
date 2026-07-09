@@ -1,11 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getActivityLogs } from '../api/client';
 import { RefreshCw } from 'lucide-react';
+import { fmtTime } from '../utils/notifications';
+
+type LogFilter = 'all' | 'errors' | 'success';
+
+const FILTERS: { key: LogFilter; label: string; color: string }[] = [
+  { key: 'all', label: 'All', color: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300' },
+  { key: 'errors', label: '⚠ Errors', color: 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500' },
+  { key: 'success', label: '✓ Success', color: 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' },
+];
 
 export default function LogsPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<LogFilter>('all');
   const [showScrollTop, setShowScrollTop] = useState(false);
+
+  // Filtered logs
+  const filteredLogs = useMemo(() => {
+    if (filter === 'all') return logs;
+    if (filter === 'errors') return logs.filter(l => l.status_code >= 400);
+    return logs.filter(l => l.status_code < 400);
+  }, [logs, filter]);
 
   // Track scroll position for "Go to top" button
   useEffect(() => {
@@ -57,6 +74,30 @@ export default function LogsPage() {
         </button>
       </div>
 
+      {/* Filter chips */}
+      {!loading && logs.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {FILTERS.map(f => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer border-none transition-all ${
+                filter === f.key
+                  ? f.color + ' ring-2 ring-offset-1 ring-offset-white dark:ring-offset-gray-900 ring-gray-300 dark:ring-gray-600'
+                  : 'text-gray-400 dark:text-gray-500 bg-transparent hover:text-gray-600 dark:hover:text-gray-400'
+              }`}
+            >
+              {f.label}
+              {f.key !== 'all' && (
+                <span className="ml-1 text-[10px] opacity-60">
+                  ({logs.filter(l => f.key === 'errors' ? l.status_code >= 400 : l.status_code < 400).length})
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] overflow-hidden">
         {loading ? (
           <div className="animate-pulse">
@@ -76,8 +117,10 @@ export default function LogsPage() {
               </div>
             ))}
           </div>
-        ) : logs.length === 0 ? (
-          <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">No activity yet</div>
+        ) : filteredLogs.length === 0 ? (
+          <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">
+            {filter === 'errors' ? 'No errors found' : filter === 'success' ? 'No successful requests found' : 'No activity yet'}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -90,10 +133,11 @@ export default function LogsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {logs.map((log, i) => (
-                  <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-                    <td className="py-2.5 px-4 text-xs text-gray-500 dark:text-gray-400 font-mono whitespace-nowrap">
-                      {new Date(log.created_at).toLocaleTimeString()}
+                {filteredLogs.map((log, i) => (
+                  <tr key={log.id || i} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
+                    <td className="py-2.5 px-4 text-xs whitespace-nowrap">
+                      <span className="text-gray-500 dark:text-gray-400 font-mono">{fmtTime(log.created_at)}</span>
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-1.5 font-mono">{new Date(log.created_at).toLocaleTimeString()}</span>
                     </td>
                     <td className="py-2.5 px-4">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-mono font-medium ${
