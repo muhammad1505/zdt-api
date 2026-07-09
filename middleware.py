@@ -109,7 +109,10 @@ def check_rate_limit():
     if request.path == '/api/logs/stream':
         return None
 
+    # Bypass rate limiting for localhost (browser testing, local clients)
     ip = request.remote_addr or 'unknown'
+    if ip in ('127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'):
+        return None
     if not _rate_limiter.check(ip):
         return jsonify({
             'error': 'Rate limit exceeded',

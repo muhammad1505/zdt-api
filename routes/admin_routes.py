@@ -307,6 +307,55 @@ def update_config():
         return jsonify({'error': str(e)}), 500
 
 
+@admin_bp.route('/api/admin/notifications', methods=['GET'])
+@requires_admin
+def notifications():
+    """Dedicated endpoint for important notifications with unread count.
+    
+    Returns only important activities (errors, mutations to critical endpoints)
+    plus a since_id param for client-side unread tracking.
+    """
+    limit = request.args.get('limit', 20, type=int)
+    limit = min(limit, 100)
+    since_id = request.args.get('since_id', 0, type=int)
+    
+    logs = get_activity_logs(limit)
+    
+    # Filter important activities (same logic as frontend isImportant)
+    important = []
+    max_id = 0
+    unread_count = 0
+    critical_paths = ['/api/files', '/api/upload', '/api/settings',
+        '/api/admin/config', '/api/download', '/api/admin/users',
+        '/api/login', '/api/profile', '/api/admin/vpn',
+        '/api/admin/services', '/api/admin/system', '/api/daemon',
+        '/api/admin/dependencies', '/api/tools', '/api/admin/keys',
+        '/api/settings/ai-keys', '/api/notify']
+    
+    for log in logs:
+        lid = log.get('id', 0)
+        if lid > max_id:
+            max_id = lid
+        status = log.get('status_code', 200)
+        ep = (log.get('endpoint') or '').lower()
+        method = (log.get('method') or '').upper()
+        
+        is_imp = status >= 400 or (
+            method in ('POST', 'PUT', 'DELETE')
+            and any(cp in ep for cp in critical_paths)
+        )
+        if is_imp:
+            if lid > since_id:
+                unread_count += 1
+            important.append(log)
+    
+    return jsonify({
+        'notifications': important[:limit],
+        'unread_count': unread_count,
+        'max_id': max_id
+    })
+
+
 @admin_bp.route('/api/admin/activity', methods=['GET'])
 @requires_admin
 def activity_logs():
