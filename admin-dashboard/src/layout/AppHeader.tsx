@@ -1,123 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { Sun, Moon } from 'lucide-react';
 import { useSidebar } from '../context/SidebarContext';
 import api, { getProfile, updateProfile, changePassword, getNotifSettings, saveNotifSettings, getLastSeenNotifId, setLastSeenNotifId } from '../api/client';
+import type { Activity } from '../utils/notifications';
+import { fmtTime, eventLabel, notifGroupKey, notifGroupLabel, notifGroupIcon, playCategorySound, CATEGORIES, SOUND_PROFILES } from '../utils/notifications';
 
 interface Props {
   username: string;
   onLogout: () => void;
-}
-
-interface Activity {
-  id: number;
-  endpoint: string;
-  method: string;
-  ip_address: string;
-  status_code: number;
-  created_at: string;
-}
-
-function fmtTime(ts: string) {
-  const d = new Date(ts);
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  if (diff < 60000) return 'just now';
-  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
-  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
-
-function extractName(a: Activity): string {
-  const parts = a.endpoint.split('/');
-  const last = parts[parts.length - 1];
-  if (last && !last.startsWith('api') && !['rename', 'config', 'test', 'status', 'install', 'upload', 'activity', 'logs', 'stream', 'password'].includes(last)) {
-    return decodeURIComponent(last);
-  }
-  return '';
-}
-
-function eventLabel(a: Activity): string {
-  const ep = a.endpoint.toLowerCase();
-  const ok = a.status_code < 400;
-  const name = extractName(a);
-
-  if (ep.includes('/api/upload')) return ok ? 'Upload berhasil' : 'Upload gagal';
-  if (ep.includes('/api/files/rename')) return ok ? `File renamed${name ? ': ' + name : ''}` : 'File rename gagal';
-  if (ep.includes('/api/files')) {
-    if (a.method === 'DELETE') return ok ? `File dihapus: ${name || 'unknown'}` : `Gagal hapus file: ${name || 'unknown'}`;
-    return ok ? `File diubah${name ? ': ' + name : ''}` : `Gagal ubah file${name ? ': ' + name : ''}`;
-  }
-  if (ep.includes('/api/download')) {
-    if (a.method === 'POST') return ok ? (name ? `Download: ${name}` : 'Download ditambahkan') : 'Download gagal';
-    return ok ? 'Download diperbarui' : 'Download error';
-  }
-  if (ep.includes('/api/settings') || ep.includes('/api/admin/config')) return ok ? 'Pengaturan berhasil diubah' : 'Gagal ubah pengaturan';
-  if (ep.includes('/api/admin/users')) {
-    if (a.method === 'POST') return ok ? (name ? `User ditambahkan: ${name}` : 'User baru') : 'Gagal tambah user';
-    if (a.method === 'DELETE') return ok ? (name ? `User dihapus: ${name}` : 'User dihapus') : 'Gagal hapus user';
-    return ok ? (name ? `User diupdate: ${name}` : 'User diupdate') : 'Gagal update user';
-  }
-  if (ep.includes('/api/profile')) return a.method === 'PUT' ? (ok ? 'Profile updated' : 'Gagal update profile') : (ok ? 'Password diganti' : 'Gagal ganti password');
-  if (ep.includes('/api/login')) return ok ? 'Login berhasil' : 'Login gagal';
-  if (ep.includes('/api/admin/vpn')) {
-    if (ep.includes('disconnect')) return ok ? 'VPN disconnected' : 'VPN disconnect gagal';
-    if (ep.includes('connect')) return ok ? 'VPN connected' : 'VPN connect gagal';
-    return ok ? 'VPN config berhasil' : 'VPN config gagal';
-  }
-  if (ep.includes('/api/admin/services')) {
-    const svcName = extractName(a);
-    return ok ? `Service ${svcName || ''} berhasil ${a.method === 'POST' ? 'diubah' : 'diperiksa'}` : `Service ${svcName || ''} gagal`;
-  }
-  if (ep.includes('/api/admin/system')) return ok ? 'System action berhasil' : 'System action gagal';
-  if (ep.includes('/api/daemon')) return ok ? 'Daemon berhasil diatur' : 'Daemon gagal';
-  if (ep.includes('/api/admin/dependencies')) return a.method === 'POST' ? (ok ? 'Dependencies installed' : 'Install dependencies gagal') : 'Dependencies OK';
-  if (ep.includes('/api/admin/keys')) {
-    if (a.method === 'POST') return ok ? (name ? `API key dibuat: ${name}` : 'API key baru') : 'Gagal buat API key';
-    if (a.method === 'DELETE') return ok ? (name ? `API key dihapus: ${name}` : 'API key dihapus') : 'Gagal hapus API key';
-    return ok ? (name ? `API key diubah: ${name}` : 'API key diubah') : 'Gagal ubah API key';
-  }
-  if (ep.includes('/api/settings/ai-keys')) return ok ? 'AI keys berhasil disimpan' : 'Gagal simpan AI keys';
-  if (ep.includes('/api/notify')) return ok ? 'Notifikasi diubah' : 'Gagal ubah notifikasi';
-  if (ep.includes('/api/tools')) return ok ? `Tool berhasil${name ? ': ' + name : ''}` : `Tool gagal${name ? ': ' + name : ''}`;
-  return ok ? `${a.method} ${a.endpoint} berhasil` : `${a.method} ${a.endpoint} gagal (${a.status_code})`;
-}
-
-function notifGroupKey(a: Activity): string {
-  if (a.status_code >= 400) return 'errors';
-  const ep = a.endpoint.toLowerCase();
-  if (ep.includes('/api/download')) return 'downloads';
-  if (ep.includes('/api/files') || ep.includes('/api/upload')) return 'files';
-  if (ep.includes('/api/settings') || ep.includes('/api/admin/config')) return 'settings';
-  if (ep.includes('/api/admin/users')) return 'users';
-  if (ep.includes('/api/admin/vpn')) return 'vpn';
-  if (ep.includes('/api/admin/services') || ep.includes('/api/admin/system')) return 'services';
-  if (ep.includes('/api/tools')) return 'tools';
-  if (ep.includes('/api/admin/keys') || ep.includes('/api/settings/ai-keys')) return 'keys';
-  if (ep.includes('/api/login') || ep.includes('/api/profile')) return 'auth';
-  return 'other';
-}
-
-function notifGroupLabel(key: string): string {
-  const labels: Record<string, string> = {
-    errors: '⚠ Errors', downloads: 'Downloads', files: 'Files',
-    settings: 'Settings', users: 'Users', vpn: 'VPN',
-    services: 'Services', tools: 'Tools', keys: 'API Keys',
-    auth: 'Auth', other: 'Other',
-  };
-  return labels[key] || 'Other';
-}
-
-function notifGroupIcon(key: string): string {
-  if (key === 'errors') return '🔴';
-  if (key === 'downloads') return '⬇';
-  if (key === 'files') return '📁';
-  if (key === 'users') return '👤';
-  if (key === 'vpn') return '🔒';
-  if (key === 'services') return '⚙';
-  if (key === 'keys') return '🔑';
-  if (key === 'tools') return '🛠';
-  if (key === 'auth') return '🔐';
-  return '•';
 }
 
 export default function AppHeader({ username, onLogout }: Props) {
@@ -174,37 +65,32 @@ export default function AppHeader({ username, onLogout }: Props) {
     }).catch(() => {});
   }, []);
 
-  // Notification sound using Web Audio API — different chime per category
-  const soundProfiles: Record<string, { freq: number; type: OscillatorType; duration: number; gain: number }> = {
-    errors: { freq: 220, type: 'sawtooth', duration: 0.5, gain: 0.15 },
-    downloads: { freq: 660, type: 'sine', duration: 0.35, gain: 0.1 },
-    files: { freq: 880, type: 'sine', duration: 0.3, gain: 0.12 },
-    settings: { freq: 520, type: 'triangle', duration: 0.3, gain: 0.1 },
-    users: { freq: 440, type: 'triangle', duration: 0.3, gain: 0.1 },
-    vpn: { freq: 550, type: 'triangle', duration: 0.3, gain: 0.1 },
-    services: { freq: 600, type: 'sine', duration: 0.3, gain: 0.1 },
-    keys: { freq: 770, type: 'sine', duration: 0.3, gain: 0.1 },
-    auth: { freq: 700, type: 'sine', duration: 0.3, gain: 0.1 },
-    tools: { freq: 500, type: 'triangle', duration: 0.35, gain: 0.1 },
-    other: { freq: 660, type: 'sine', duration: 0.3, gain: 0.1 },
-  };
+  // Sound preview modal
+  const [soundPreviewOpen, setSoundPreviewOpen] = useState(false);
 
+  // Theme toggle
+  const [isDark, setIsDark] = useState(() => {
+    return document.documentElement.classList.contains('dark') ||
+      localStorage.getItem('zdt_theme') === 'dark' ||
+      (!localStorage.getItem('zdt_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  });
+
+  const toggleTheme = useCallback(() => {
+    const next = !isDark;
+    setIsDark(next);
+    if (next) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('zdt_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('zdt_theme', 'light');
+    }
+  }, [isDark]);
+
+  // Notification sound — uses shared playCategorySound
   const playNotifSound = useCallback((category?: string) => {
     if (!notifSoundEnabled) return;
-    try {
-      const profile = (category && soundProfiles[category]) || soundProfiles.other;
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = profile.freq;
-      osc.type = profile.type;
-      gain.gain.setValueAtTime(profile.gain, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + profile.duration);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + profile.duration);
-    } catch { /* Audio not supported */ }
+    playCategorySound(category || 'other');
   }, [notifSoundEnabled]);
 
   // Request desktop notification permission on mount
@@ -336,7 +222,17 @@ export default function AppHeader({ username, onLogout }: Props) {
           <span className="text-sm text-gray-500 dark:text-gray-400">Admin Dashboard</span>
         </div>
 
-        <div className="flex items-center gap-3 ml-auto">
+        <div className="flex items-center gap-1.5 ml-auto">
+          {/* Theme Toggle */}
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors border-none cursor-pointer"
+            aria-label="Toggle theme"
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {isDark ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+
           {/* Notification Bell */}
           <div className="relative" ref={notifRef}>
             <button
@@ -417,19 +313,9 @@ export default function AppHeader({ username, onLogout }: Props) {
                     Desktop
                   </label>
                   <button
-                    onClick={() => {
-                      const cats = ['errors', 'downloads', 'files', 'users', 'vpn', 'services', 'keys', 'auth', 'tools'];
-                      let i = 0;
-                      const playNext = () => {
-                        if (i >= cats.length) return;
-                        playNotifSound(cats[i]);
-                        i++;
-                        setTimeout(playNext, 500);
-                      };
-                      playNext();
-                    }}
+                    onClick={() => setSoundPreviewOpen(true)}
                     className="text-xs text-gray-400 hover:text-brand-500 dark:hover:text-brand-400 bg-transparent border border-gray-200 dark:border-gray-700 rounded px-2 py-0.5 cursor-pointer transition-colors"
-                    title="Test all notification sounds"
+                    title="Preview individual notification sounds"
                   >
                     Test sounds
                   </button>
@@ -539,6 +425,42 @@ export default function AppHeader({ username, onLogout }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Sound Preview Modal */}
+      {soundPreviewOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[999999]" onClick={() => setSoundPreviewOpen(false)}>
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 w-[380px] max-w-[95vw] shadow-theme-md py-5 px-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90">Notification Sounds</h3>
+              <button onClick={() => setSoundPreviewOpen(false)}
+                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-none cursor-pointer transition-colors">
+                Close
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {CATEGORIES.filter(c => c !== 'other').map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => {
+                    if (notifSoundEnabled) {
+                      playCategorySound(cat);
+                    }
+                  }}
+                  disabled={!notifSoundEnabled}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-transparent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <span className="text-xs">{notifGroupIcon(cat)}</span>
+                  <span className="flex-1 text-left">{notifGroupLabel(cat)}</span>
+                  <span className="text-[10px] text-gray-400 font-mono">{SOUND_PROFILES[cat].freq}Hz</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 text-[10px] text-gray-400 text-center">
+              {notifSoundEnabled ? 'Click a category to preview its sound' : 'Enable Sound toggle above to preview'}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Profile Edit Modal */}
       {profileOpen && profileData && (
