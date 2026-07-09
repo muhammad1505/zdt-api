@@ -26,7 +26,7 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/admin">
       <Routes>
         <Route element={<AppLayout username={user?.username || ''} role={user?.role || 'operator'} onLogout={logout} />}>
           <Route path="/" element={<ProtectedRoute isAuthenticated={isAuthenticated}><DashboardPage /></ProtectedRoute>} />
