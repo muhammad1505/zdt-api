@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Sun, Moon } from 'lucide-react';
 import { useSidebar } from '../context/SidebarContext';
-import api, { getProfile, updateProfile, changePassword, getNotifSettings, saveNotifSettings, getLastSeenNotifId, setLastSeenNotifId } from '../api/client';
+import api, { apiSilent, getProfile, updateProfile, changePassword, getNotifSettings, saveNotifSettings, getLastSeenNotifId, setLastSeenNotifId } from '../api/client';
 import type { Activity } from '../utils/notifications';
 import { fmtTime, eventLabel, notifGroupKey, notifGroupLabel, notifGroupIcon, playCategorySound, CATEGORIES, SOUND_PROFILES } from '../utils/notifications';
 
@@ -142,7 +142,8 @@ export default function AppHeader({ username, onLogout }: Props) {
     const fetchNotifs = async () => {
       try {
         const since = lastNotifId.current > 0 ? `&since_id=${lastNotifId.current}` : '';
-        const res = await api.get(`/api/admin/notifications?limit=20${since}`);
+        // Use apiSilent for background polling so 401 doesn't redirect to login
+        const res = await apiSilent.get(`/api/admin/notifications?limit=20${since}`);
         const items: Activity[] = res.data.notifications || [];
         const unread = res.data.unread_count || 0;
         const maxId = res.data.max_id || 0;
@@ -183,7 +184,7 @@ export default function AppHeader({ username, onLogout }: Props) {
     if (notifOpen) {
       setUnreadCount(0);
       // Refresh notifications when opening (no unread since it's just opened)
-      api.get('/api/admin/notifications?limit=20').then(res => {
+      apiSilent.get('/api/admin/notifications?limit=20').then(res => {
         setNotifications(res.data.notifications || []);
       }).catch(() => {});
       // Persist last seen ID to backend so unread count survives page refresh

@@ -7,19 +7,28 @@ const api = axios.create({
   timeout: 15000,
 });
 
-api.interceptors.request.use((config) => {
+// Silent API instance — no 401/403 redirect (for background polling)
+const apiSilent = axios.create({
+  baseURL: API_BASE,
+  timeout: 15000,
+});
+
+function attachToken(config: any) {
   const token = localStorage.getItem('zdt_admin_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
-});
+}
 
+api.interceptors.request.use(attachToken);
+apiSilent.interceptors.request.use(attachToken);
+
+// Main API instance: redirects to login on 401/403
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401 || err.response?.status === 403) {
       localStorage.removeItem('zdt_admin_token');
       localStorage.removeItem('zdt_admin_user');
-      // Save current path so we can redirect back after login
       sessionStorage.setItem('zdt_redirect_path', window.location.pathname + window.location.search);
       window.location.href = '/admin/';
     }
@@ -27,7 +36,17 @@ api.interceptors.response.use(
   }
 );
 
+// Silent API instance: no redirect on 401/403 (for background tasks)
+apiSilent.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    // Silently ignore auth errors — don't redirect to login
+    return Promise.reject(err);
+  }
+);
+
 export default api;
+export { apiSilent };
 
 export const login = async (username: string, password: string) => {
   const res = await api.post('/api/login', { username, password });
