@@ -19,7 +19,7 @@ api.interceptors.response.use(
     if (err.response?.status === 401 || err.response?.status === 403) {
       localStorage.removeItem('zdt_admin_token');
       localStorage.removeItem('zdt_admin_user');
-      window.location.href = '/';
+      window.location.href = '/admin/';
     }
     return Promise.reject(err);
   }

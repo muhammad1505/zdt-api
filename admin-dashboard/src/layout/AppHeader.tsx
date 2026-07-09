@@ -316,7 +316,7 @@ export default function AppHeader({ username, onLogout }: Props) {
                         </button>
                       </>
                     )}
-                    <Link to="/logs" className="text-xs text-brand-500 hover:underline no-underline">View all</Link>
+                    <Link to="/notifications" className="text-xs text-brand-500 hover:underline no-underline">View all</Link>
                   </div>
                 </div>
                 {/* Notification preferences toggles */}
