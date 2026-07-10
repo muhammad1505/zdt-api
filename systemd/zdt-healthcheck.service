@@ -7,7 +7,7 @@ Type=oneshot
 User=__USER__
 Group=__USER__
 WorkingDirectory=__ZDT_API_DIR__
-ExecStart=__ZDT_API_DIR__/systemd/zdt-healthcheck.sh
+ExecStart=/usr/local/bin/zdt-healthcheck.sh
 StandardOutput=journal
 StandardError=journal
 

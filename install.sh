@@ -185,12 +185,18 @@ setup_dirs() {
 }
 
 # ─── Copy VPN script ────────────────────────────
-install_vpn_script() {
+install_helper_scripts() {
     if [ -f "$ZDT_API_DIR/zdt-vpn.sh" ]; then
         step "Installing VPN helper script"
         cp "$ZDT_API_DIR/zdt-vpn.sh" "/usr/local/bin/zdt-vpn.sh"
         chmod 755 "/usr/local/bin/zdt-vpn.sh"
         ok "zdt-vpn.sh installed to /usr/local/bin/"
+    fi
+    if [ -f "$ZDT_API_DIR/systemd/zdt-healthcheck.sh" ]; then
+        step "Installing Health Check script"
+        cp "$ZDT_API_DIR/systemd/zdt-healthcheck.sh" "/usr/local/bin/zdt-healthcheck.sh"
+        chmod 755 "/usr/local/bin/zdt-healthcheck.sh"
+        ok "zdt-healthcheck.sh installed to /usr/local/bin/"
     fi
 }
 
@@ -451,7 +457,7 @@ main() {
     setup_venv
     build_frontend
     setup_dirs
-    install_vpn_script
+    install_helper_scripts
     generate_config
     init_database
     install_systemd

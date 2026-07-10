@@ -54,12 +54,12 @@ const TS = Date.now();
     await page.waitForTimeout(1000);
     
     let dialogAccepted = false;
-    page.on('dialog', async dialog => {
+    const delHandler = async dialog => {
         dialogAccepted = true;
         await dialog.accept();
-    });
+    };
+    page.once('dialog', delHandler);
 
-    // Delete buttons use bg-error-50 class (UsersPage.tsx styling)
     const delBtn = await page.$('button.bg-error-50');
     if (delBtn) {
         await delBtn.click();
@@ -98,6 +98,29 @@ const TS = Date.now();
         } else {
             check('Generate button found', false, 'Modal not visible');
         }
+    }
+
+    // ========== REVOKE GENERATED KEY ==========
+    console.log('\n=== REVOKE API KEY ===');
+    await page.waitForTimeout(1000);
+    
+    let dialog2Accepted = false;
+    const revokeHandler = async dialog => {
+        dialog2Accepted = true;
+        await dialog.accept();
+    };
+    page.once('dialog', revokeHandler);
+
+    const revokeBtn = await page.$('button.bg-error-50');
+    if (revokeBtn) {
+        await revokeBtn.click();
+        await page.waitForTimeout(2000);
+        check('Revoke dialog handled', dialog2Accepted, 'Revoke dialog not triggered');
+        
+        const bodyAfter = await page.textContent('body');
+        check('Key shows Revoked', bodyAfter.includes('Revoked'), 'Key still shows Active');
+    } else {
+        check('Revoke button found', false, 'No bg-error-50 button on API Keys page');
     }
 
     console.log('\n=== RESULTS ===');
