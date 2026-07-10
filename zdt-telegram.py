@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import os
+import re
 import time
 import subprocess
 import shutil
@@ -257,6 +258,16 @@ def ping_bot(message):
 
 def get_target_dir():
     target_dir = os.path.expanduser("~/Music/ZDT_Downloads")
+    # Check project config.env first (same source as web server)
+    project_conf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.env")
+    if os.path.exists(project_conf):
+        with open(project_conf, 'r') as f:
+            for line in f:
+                if line.startswith("TARGET_DIR="):
+                    val = line.strip().split('=', 1)[1].strip('"').strip("'")
+                    if val and val != ".":
+                        return os.path.expanduser(val)
+    # Fallback to ZdtPaths config files
     conf_file = ZdtPaths.get_config_file()
     old_conf = ZdtPaths.get_old_config_file()
     for cf in [conf_file, old_conf]:
@@ -912,19 +923,27 @@ def dl_format_callback(call):
         return
     data['dl_format'] = fmt
     if fmt == 'audio':
-        markup = InlineKeyboardMarkup()
-        markup.row(
+        markup = InlineKeyboardMarkup(row_width=3)
+        markup.add(
+            InlineKeyboardButton("64kbps", callback_data="dl_abr:64"),
+            InlineKeyboardButton("96kbps", callback_data="dl_abr:96"),
             InlineKeyboardButton("128kbps", callback_data="dl_abr:128"),
             InlineKeyboardButton("192kbps", callback_data="dl_abr:192"),
+            InlineKeyboardButton("256kbps", callback_data="dl_abr:256"),
             InlineKeyboardButton("320kbps", callback_data="dl_abr:320"),
         )
         bot.edit_message_text("🎵 *Pilih Bitrate Audio:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     else:
-        markup = InlineKeyboardMarkup()
-        markup.row(
+        markup = InlineKeyboardMarkup(row_width=3)
+        markup.add(
+            InlineKeyboardButton("144p", callback_data="dl_vq:144"),
+            InlineKeyboardButton("240p", callback_data="dl_vq:240"),
             InlineKeyboardButton("360p", callback_data="dl_vq:360"),
+            InlineKeyboardButton("480p", callback_data="dl_vq:480"),
             InlineKeyboardButton("720p", callback_data="dl_vq:720"),
             InlineKeyboardButton("1080p", callback_data="dl_vq:1080"),
+            InlineKeyboardButton("1440p", callback_data="dl_vq:1440"),
+            InlineKeyboardButton("2160p", callback_data="dl_vq:2160"),
         )
         bot.edit_message_text("🎬 *Pilih Kualitas Video:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     bot.answer_callback_query(call.id)
@@ -1031,6 +1050,13 @@ def dl_confirm_callback(call):
             if process.returncode == 0:
                 _record_download(url, fmt)
                 bot.edit_message_text(f"✅ <b>{label} berhasil di-download!</b>\n\n<pre>{html.escape(final_context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML")
+                # Send post-download options
+                dl_markup = InlineKeyboardMarkup(row_width=2)
+                dl_markup.add(
+                    InlineKeyboardButton("🎤 Sync Lirik", callback_data=f"cmd_sync:{url}"),
+                    InlineKeyboardButton("✂️ Pisah Vokal", callback_data=f"cmd_demucs:{url}"),
+                )
+                bot.send_message(chat_id, "📌 *Aksi setelah download:*\nPilih opsi tambahan di bawah ini.", parse_mode="Markdown", reply_markup=dl_markup)
             else:
                 bot.edit_message_text(f"❌ <b>Download {label} gagal.</b>\n\n<pre>{html.escape(final_context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML")
         except Exception as e:
@@ -1038,6 +1064,33 @@ def dl_confirm_callback(call):
 
     if not _safe_submit_task(_task):
         bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=chat_id, message_id=sent_msg.message_id)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('cmd_sync:') or call.data.startswith('cmd_demucs:'))
+def post_download_callback(call):
+    prefix, url = call.data.split(':', 1)
+    chat_id = call.message.chat.id
+    if prefix == 'cmd_sync':
+        bot.answer_callback_query(call.id, "Sync lirik via CLI...")
+        bot.send_message(chat_id, f"⏳ <b>Sync Lirik</b>\n📍 <code>{url}</code>\nProses via command line.", parse_mode="HTML")
+        def _sync():
+            try:
+                res = subprocess.run([get_zdt_bin(), "--sync-lirik", url], capture_output=True, text=True, timeout=120)
+                bot.send_message(chat_id, f"{'✅' if res.returncode == 0 else '❌'} <b>Sync Lirik {'berhasil' if res.returncode == 0 else 'gagal'}</b>\n<pre>{res.stdout[-500:] if res.stdout else res.stderr[-500:]}</pre>", parse_mode="HTML")
+            except Exception as e:
+                bot.send_message(chat_id, f"❌ Error: {e}")
+        if not _safe_submit_task(_sync):
+            bot.send_message(chat_id, "❌ Server sibuk, coba lagi.")
+    elif prefix == 'cmd_demucs':
+        bot.answer_callback_query(call.id, "Pisah vokal via CLI...")
+        bot.send_message(chat_id, f"⏳ <b>Pisah Vokal (Demucs)</b>\n📍 <code>{url}</code>\nProses via command line.", parse_mode="HTML")
+        def _demucs():
+            try:
+                res = subprocess.run([get_zdt_bin(), "--demucs", url], capture_output=True, text=True, timeout=600)
+                bot.send_message(chat_id, f"{'✅' if res.returncode == 0 else '❌'} <b>Pisah Vokal {'berhasil' if res.returncode == 0 else 'gagal'}</b>\n<pre>{res.stdout[-500:] if res.stdout else res.stderr[-500:]}</pre>", parse_mode="HTML")
+            except Exception as e:
+                bot.send_message(chat_id, f"❌ Error: {e}")
+        if not _safe_submit_task(_demucs):
+            bot.send_message(chat_id, "❌ Server sibuk, coba lagi.")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('cmd_'))
 def callback_query(call):
