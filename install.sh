@@ -323,6 +323,9 @@ install_systemd() {
     if [ -f "$svc_dir/zdt-watch.service" ] && [ -f "$ZDT_API_DIR/zdt-watch.py" ]; then
         systemctl enable --now zdt-watch.service 2>/dev/null || true
     fi
+    if [ -f "$svc_dir/zdt-healthcheck.timer" ]; then
+        systemctl enable --now zdt-healthcheck.timer 2>/dev/null && ok "zdt-healthcheck.timer started (every 5 min)" || warn "zdt-healthcheck.timer failed to start"
+    fi
 }
 
 # ─── Demucs AI (optional) ───────────────────────
