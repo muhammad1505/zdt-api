@@ -60,7 +60,7 @@ cp config.env.example config.env  # atau buat manual
 python3 -c "from database import init_db; init_db()"
 
 # 7. Run
-gunicorn --bind 0.0.0.0:2000 --workers 1 --timeout 120 server:app
+gunicorn --bind 0.0.0.0:2000 --worker-class gthread --workers 1 --threads 2 --timeout 120 server:app
 ```
 
 ## Systemd Services
@@ -369,6 +369,23 @@ python tests/verify_production.py
 ```
 
 ## Bug Fixes & Changelog
+
+### v1.4.0 — daisyUI Migration, Telegram Overhaul, CSRF Fixes
+
+| Perubahan | File | Deskripsi |
+|-----------|------|-----------|
+| **daisyUI Migration** | Semua 13 TSX files | Admin Dashboard migrasi penuh ke daisyUI components. App.css dihapus, index.css dibersihkan. FileBrowser 100% daisyUI classes. |
+| **Dashboard Backend** | `routes/dashboard_routes.py` | File count cache 30 detik, ThreadPoolExecutor untuk parallel stat, timeout 2s. |
+| **Timezone Fix** | `LogsPage.tsx`, `NotificationsPage.tsx` | Waktu tidak lagi pakai `+Z` suffix. |
+| **VPN Python Rewrite** | `routes/vpn_routes.py` | VPN menggunakan l2tp-control write langsung + sudo fallback. `NoNewPrivileges=true` dihapus dari systemd. |
+| **Telegram Overhaul** | `zdt-telegram.py` | Interactive download flow dengan progress bar, demucs post-processing, unified stats, keyword fallback `cari/search/carikan`, index-based callback data (tidak pakai URL di callback_data), `get_target_dir()` baca project config.env dulu, bitrate (64–320) & resolution (144p–2160p) lengkap, post-download button Sync Lirik & Pisah Vokal. |
+| **apiSilent Migration** | `ToolsPage.tsx`, `FileBrowser.tsx`, `client.ts`, `AppHeader.tsx` | Semua background polling & silent API calls pakai `apiSilent` (tanpa redirect 403). |
+| **CSRF Bearer Bypass** | `server.py` | Bearer token yang valid skip CSRF validation, mencegah 403 false positive. |
+| **resolve_path** | `routes/daemon_routes.py` | Absolute paths (system-scope browser) langsung diproses tanpa path traversal check. |
+| **delete_all** | `routes/daemon_routes.py` | Hapus SEMUA item (file + recursive folder), bukan hanya media files. |
+| **External Update Check** | `routes/admin_routes.py` | Endpoint `/api/update-check` dihapus. |
+| **System Restart** | `routes/admin_routes.py` | Pakai `systemctl` langsung, bukan subprocess shell. |
+| **gunicorn Config** | systemd service | `--worker-class gthread --workers 1 --threads 2 --timeout 120` |
 
 ### v1.3.0 — ZDT Web Console + Single Port Architecture
 
