@@ -1079,7 +1079,8 @@ def search_page_callback(call):
     bot.answer_callback_query(call.id)
     try:
         bot.edit_message_text(f"🔍 <b>Mencari di YouTube...</b>\nKata kunci: <code>{query}</code>", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML")
-    except Exception: pass
+    except Exception as e:
+        logging.warning(f"Failed to update search message: {e}")
     
     def _paginate():
         try:
@@ -1088,7 +1089,8 @@ def search_page_callback(call):
             if res.returncode != 0 or not res.stdout.strip():
                 try:
                     bot.edit_message_text("❌ Pencarian tidak menemukan hasil.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-                except Exception: pass
+                except Exception as e:
+                    logging.warning(f"Failed to show no-results message: {e}")
                 return
             lines = res.stdout.strip().split('\n')
             all_results = []
@@ -1099,7 +1101,8 @@ def search_page_callback(call):
             if not all_results:
                 try:
                     bot.edit_message_text("❌ Pencarian tidak menemukan hasil.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-                except Exception: pass
+                except Exception as e:
+                    logging.warning(f"Failed to show no-results message (2): {e}")
                 return
             start = page * 5
             page_results = all_results[start:start + 5]
@@ -1129,11 +1132,13 @@ def search_page_callback(call):
             out_text += "\n\n👇 Pilih nomor di bawah ini"
             try:
                 bot.edit_message_text(f"🎯 <b>Hasil Pencarian:</b>\n\n{out_text}", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup, link_preview_options=telebot.types.LinkPreviewOptions(is_disabled=True))
-            except Exception: pass
+            except Exception as e:
+                logging.warning(f"Failed to show search results: {e}")
         except Exception as e:
             try:
                 bot.edit_message_text(f"❌ Error: {e}", chat_id=call.message.chat.id, message_id=call.message.message_id)
-            except Exception: pass
+            except Exception as inner_e:
+                logging.warning(f"Failed to show error message: {inner_e}")
     if not _safe_submit_task(_paginate):
         try:
             bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=call.message.chat.id, message_id=call.message.message_id)
