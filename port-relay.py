@@ -11,12 +11,13 @@ def relay(a, b):
             d = a.recv(65536)
             if not d: break
             b.sendall(d)
-    except: pass
+    except Exception as e:
+        print(f'Relay error: {e}', file=sys.stderr)
     finally:
         try: a.close()
-        except: pass
+        except Exception: pass
         try: b.close()
-        except: pass
+        except Exception: pass
 
 def handler(client):
     upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -24,7 +25,8 @@ def handler(client):
         upstream.connect(DEST)
         threading.Thread(target=relay, args=(upstream, client), daemon=True).start()
         threading.Thread(target=relay, args=(client, upstream), daemon=True).start()
-    except:
+    except Exception as e:
+        print(f'Upstream connection failed: {e}', file=sys.stderr)
         client.close()
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

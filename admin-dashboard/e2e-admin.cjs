@@ -1,121 +1,48 @@
 /**
- * E2E Test: Users (list, create, edit, delete) and API Keys (list, generate, revoke)
- * 
- * Run: ZDT_PASSWORD=yourpass node e2e-admin.cjs
+ * E2E Test: Users and API Keys pages
  * Env vars: ZDT_USERNAME (default: admin), ZDT_PASSWORD (required), ZDT_BASE_URL (default: http://localhost:2000)
  */
 const { chromium } = require('playwright');
+const { login: sharedLogin, clickNav, check, getResults } = require('./e2e-helpers.cjs');
 
 const BASE_URL = process.env.ZDT_BASE_URL || 'http://localhost:2000';
-const BASE = BASE_URL + '/admin/';
 const USERNAME = process.env.ZDT_USERNAME || 'admin';
 const PASSWORD = process.env.ZDT_PASSWORD;
-
-if (!PASSWORD) {
-    console.error('❌ ZDT_PASSWORD environment variable is required');
-    process.exit(1);
-}
-
-let passed = 0;
-let failed = 0;
-let page;
-
-function check(name, condition, detail = '') {
-    if (condition) { passed++; console.log(`  ✅ ${name}`); }
-    else { failed++; console.log(`  ❌ ${name} — ${detail}`); }
-}
-
-async function login() {
-    await page.goto(BASE, { waitUntil: 'networkidle', timeout: 20000 });
-    const inputs = await page.$$('input');
-    if (inputs.length >= 2) {
-        await inputs[0].fill(USERNAME);
-        await inputs[1].fill(PASSWORD);
-        const submitBtn = await page.$('button[type="submit"]');
-        if (submitBtn) await submitBtn.click();
-        await page.waitForTimeout(3000);
-    }
-    return !page.url().includes('login');
-}
-
-async function clickNav(name) {
-    const link = await page.$(`a:has-text("${name}")`);
-    const btn = await page.$(`button:has-text("${name}")`);
-    const el = link || btn;
-    if (el) { await el.click(); await page.waitForTimeout(2000); return true; }
-    return false;
-}
+if (!PASSWORD) { console.error('ZDT_PASSWORD required'); process.exit(1); }
 
 (async () => {
-    const browser = await chromium.launch({ 
-        headless: true, 
-        args: ['--no-sandbox', '--disable-setuid-sandbox'] 
-    });
-    page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
     console.log('\n=== LOGIN ===');
-    const loggedIn = await login();
-    check('Login success', loggedIn, 'Still on login page');
-    if (!loggedIn) { await browser.close(); process.exit(1); }
+    const loginOk = (await sharedLogin(page, USERNAME, PASSWORD, BASE_URL)).success;
+    check('Login success', loginOk, '');
+    if (!loginOk) { await browser.close(); process.exit(1); }
 
-    // ========== USERS ==========
     console.log('\n=== USERS PAGE ===');
-    const usersClicked = await clickNav('Users');
-    check('Users page navigated', usersClicked, 'Users nav not found');
-
-    if (usersClicked) {
+    const usersNav = await clickNav(page, 'Users');
+    check('Users page navigated', usersNav, '');
+    if (usersNav) {
         const body = await page.textContent('body');
-        check('Users page loaded', 
-              body.includes('Users') || body.includes('username') || body.includes('operator'),
-              `Content: ${body.substring(0, 200)}`);
-
-        // Check Add User button
-        const addBtn = await page.$('button:has-text("Add User")');
-        check('Add User button visible', addBtn !== null, 'Add User button not found');
-
-        // Check user list has entries
-        const userCards = await page.$$('[class*=rounded-2xl]');
-        check('User list contains entries', userCards.length >= 1, `Found ${userCards.length} cards`);
+        check('Users page loaded', body.includes('Users') || body.includes('username') || body.includes('operator'), '');
+        check('Add User button visible', await page.$('button:has-text("Add User")') !== null, 'Add User button not found');
+        check('User list has entries', (await page.$$('[class*=rounded-2xl]')).length >= 1, 'No user cards');
     }
 
-    // ========== API KEYS ==========
     console.log('\n=== API KEYS PAGE ===');
-    const keysClicked = await clickNav('API Keys');
-    check('API Keys page navigated', keysClicked, 'API Keys nav not found');
-
-    if (keysClicked) {
+    const keysNav = await clickNav(page, 'API Keys');
+    check('API Keys page navigated', keysNav, '');
+    if (keysNav) {
         const body = await page.textContent('body');
-        check('API Keys page loaded',
-              body.includes('Key') || body.includes('API') || body.includes('key_id'),
-              `Content: ${body.substring(0, 200)}`);
-
-        // Check Generate Key button
-        const genBtn = await page.$('button:has-text("Generate Key")');
-        check('Generate Key button visible', genBtn !== null, 'Generate button not found');
-
-        // Check for existing keys or empty state
-        const hasKeys = body.includes('Active') || body.includes('Revoked');
-        const emptyState = body.includes('No API keys');
-        check('Key list loaded (keys or empty state)', hasKeys || emptyState, 
-              hasKeys ? 'Keys found' : 'Empty state shown');
+        check('API Keys page loaded', body.includes('Key') || body.includes('API') || body.includes('key_id'), '');
+        check('Generate Key button visible', await page.$('button:has-text("Generate Key")') !== null, '');
+        check('Key list or empty state', body.includes('Active') || body.includes('Revoked') || body.includes('No API keys'), '');
     }
-
-    // ========== RESULTS ==========
-    const errors = [];
-    page.on('console', msg => {
-        if (msg.type() === 'error') errors.push(msg.text());
-    });
-    await page.waitForTimeout(500);
 
     console.log('\n=== RESULTS ===');
-    console.log(`  Passed: ${passed}/${passed + failed}`);
-    console.log(`  Failed: ${failed}`);
-    console.log(`  Console errors: ${errors.length > 0 ? errors.slice(0, 5).join(' | ') : 'none'}`);
-
+    const r = getResults();
+    console.log(`  Passed: ${r.passed}/${r.passed + r.failed}`);
+    console.log(`  Failed: ${r.failed}`);
     await browser.close();
-    console.log('\n=== TEST COMPLETE ===');
-    process.exit(failed > 0 ? 1 : 0);
-})().catch(e => {
-    console.error('Test error:', e.message);
-    process.exit(1);
-});
+    process.exit(r.failed > 0 ? 1 : 0);
+})().catch(e => { console.error('Error:', e.message); process.exit(1); });
