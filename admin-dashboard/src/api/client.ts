@@ -144,7 +144,7 @@ export const clearLogs = async () => {
 };
 
 export const manageDaemon = async (name: string, action: string) => {
-  const res = await api.post('/api/daemon', { name, action });
+  const res = await api.post('/api/daemon', { name, service: name, action });
   return res.data;
 };
 

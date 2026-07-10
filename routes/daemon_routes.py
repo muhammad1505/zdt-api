@@ -99,9 +99,14 @@ def manage_daemon():
     try:
         data = request.get_json(silent=True) or {}
         # Accept both 'service' (backend) and 'name' (frontend manageDaemon)
-        service = data.get('service', '') or data.get('name', '')
-        action = data.get('action', '')  # 'start' or 'stop'
-        
+        service = data.get('service') or data.get('name') or ''
+        action = data.get('action', '')
+        if not service:
+            return jsonify({
+                'success': False,
+                'error': 'Missing service name',
+                'message': 'Field "service" or "name" is required'
+            }), 400
         if service not in DAEMON_MAP:
             return jsonify({
                 'success': False,
