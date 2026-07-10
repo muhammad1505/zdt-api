@@ -767,7 +767,8 @@ def _is_process_running(script_name):
     try:
         r = subprocess.run(['pgrep', '-f', script_name], capture_output=True, text=True, timeout=5)
         return r.returncode == 0
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to check process {script_name}: {e}")
         return False
 
 def _kill_process(script_name):
@@ -777,14 +778,16 @@ def _kill_process(script_name):
             for pid in r.stdout.strip().split('\n'):
                 if pid:
                     try: os.kill(int(pid), signal.SIGTERM)
-                    except Exception: pass
+                    except Exception as e:
+                        logger.warning(f"Failed to SIGTERM {pid} for {script_name}: {e}")
             time.sleep(1)
             for pid in r.stdout.strip().split('\n'):
                 if pid:
                     try: os.kill(int(pid), signal.SIGKILL)
-                    except Exception: pass
-    except Exception:
-        pass
+                    except Exception as e:
+                        logger.warning(f"Failed to SIGKILL {pid} for {script_name}: {e}")
+    except Exception as e:
+        logger.warning(f"Failed to kill process {script_name}: {e}")
 
 @admin_bp.route('/api/admin/services/<name>/<action>', methods=['POST'])
 @requires_admin

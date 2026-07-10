@@ -41,13 +41,20 @@ async function clickNav(page, name) {
 }
 
 function getResults() {
-    return { passed, failed, consoleErrors };
+    return { passed, failed };
 }
 
 function resetCounters() {
     passed = 0;
     failed = 0;
-    consoleErrors = [];
 }
 
-module.exports = { login, clickNav, check, getResults, resetCounters };
+function setupConsoleTracking(page) {
+    page.on('console', msg => {
+        if (msg.type() === 'error') {
+            console.log(`  ⚠️ Console error: ${msg.text().substring(0, 100)}`);
+        }
+    });
+}
+
+module.exports = { login, clickNav, check, getResults, resetCounters, setupConsoleTracking };
