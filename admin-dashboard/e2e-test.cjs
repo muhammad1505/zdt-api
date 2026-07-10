@@ -1,12 +1,21 @@
 /**
- * E2E Test: Login → Settings → Services → Start → No Redirect
- * CommonJS version to avoid ESM module resolution issues.
+ * E2E Test: Full user flow — Login → Settings → Services → Start/Stop → No Redirect
+ * 
+ * Run: node e2e-test.cjs
+ * Env vars: ZDT_USERNAME (default: admin), ZDT_PASSWORD (required), ZDT_BASE_URL (default: http://localhost:2000)
  */
 const { chromium } = require('playwright');
 
-const BASE = 'http://localhost:2000/admin/';
-const USERNAME = 'admin';
-const PASSWORD = 'f01f8ab0524a7d18';
+const BASE_URL = process.env.ZDT_BASE_URL || 'http://localhost:2000';
+const BASE = BASE_URL + '/admin/';
+const USERNAME = process.env.ZDT_USERNAME || 'admin';
+const PASSWORD = process.env.ZDT_PASSWORD;
+
+if (!PASSWORD) {
+    console.error('❌ ZDT_PASSWORD environment variable is required');
+    console.error('   Usage: ZDT_PASSWORD=yourpass node e2e-test.cjs');
+    process.exit(1);
+}
 
 let passed = 0;
 let failed = 0;
@@ -83,14 +92,20 @@ function check(name, condition, detail = '') {
                   `Content around services: ${settingsBody.substring(settingsBody.indexOf('Services') - 50, settingsBody.indexOf('Services') + 200)}`);
 
             console.log('\n=== TEST 4: Start a service (CRITICAL) ===');
-            // Find all buttons that say "Start"
             const allButtons = await page.$$('button');
             let startClicked = false;
+            let startedServiceName = '';
             
             for (const btn of allButtons) {
                 const text = await btn.textContent();
                 if (text.trim() === 'Start') {
-                    console.log(`  Found Start button, clicking...`);
+                    // Get the service name from the card heading
+                    const card = await btn.evaluate(el => {
+                        let p = el.closest('[class*=rounded-2xl]');
+                        return p ? (p.querySelector('[class*=font-medium]')?.textContent || '') : '';
+                    });
+                    startedServiceName = card || 'unknown';
+                    console.log(`  Starting: "${startedServiceName}"...`);
                     startClicked = true;
                     await btn.click();
                     await page.waitForTimeout(3000);
@@ -103,6 +118,14 @@ function check(name, condition, detail = '') {
                     check('Still on admin page', 
                           currentUrl.includes('/admin/'), 
                           `URL: ${currentUrl}`);
+                    
+                    // Check for success toast or status change
+                    const afterStartBody = await page.textContent('body');
+                    const hasRunning = afterStartBody.includes('Running');
+                    const hasSuccess = afterStartBody.includes('success') || afterStartBody.includes('berhasil');
+                    check('Service status shows Running or success toast',
+                          hasRunning || hasSuccess,
+                          hasRunning ? 'Running badge found' : hasSuccess ? 'Success toast found' : 'No Running badge or success toast');
                     console.log(`  Final URL: ${currentUrl}`);
                     break;
                 }
@@ -110,10 +133,38 @@ function check(name, condition, detail = '') {
             
             if (!startClicked) {
                 console.log('  No Start button found - services may already be running');
-                // Try clicking any Stop button instead (not an error)
                 const hasStop = await page.$('text=Stop') !== null;
                 check('Services in running state or startable', true, 
                       hasStop ? 'Stop buttons found (services running)' : 'No Start or Stop buttons');
+            }
+
+            // ========== CLEANUP: Stop the service ==========
+            if (startClicked && startedServiceName) {
+                console.log('\n=== TEST 5: Stop service (cleanup) ===');
+                await page.waitForTimeout(2000);
+                // Find Stop button for same service
+                const buttonsAfter = await page.$$('button');
+                for (const btn of buttonsAfter) {
+                    const txt = await btn.textContent();
+                    if (txt.trim() === 'Stop') {
+                        console.log(`  Stopping: "${startedServiceName}"...`);
+                        await btn.click();
+                        await page.waitForTimeout(3000);
+                        
+                        const stopUrl = page.url();
+                        check('NOT redirected on stop', 
+                              !stopUrl.includes('login'), 
+                              `Redirected to: ${stopUrl}`);
+                        
+                        const afterStopBody = await page.textContent('body');
+                        const hasStopped = afterStopBody.includes('Stopped');
+                        check('Service shows Stopped or success toast',
+                              hasStopped || afterStopBody.includes('berhasil') || afterStopBody.includes('success'),
+                              hasStopped ? 'Stopped badge found' : 'Success toast expected');
+                        console.log('  Cleanup complete');
+                        break;
+                    }
+                }
             }
         } else {
             check('Settings link/button found', false, 'Settings not found');

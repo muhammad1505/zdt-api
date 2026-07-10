@@ -1,0 +1,15 @@
+[Unit]
+Description=ZDT Health Check — restart zdt-api if health fails
+After=zdt-api.service
+
+[Service]
+Type=oneshot
+User=__USER__
+Group=__USER__
+WorkingDirectory=__ZDT_API_DIR__
+ExecStart=__ZDT_API_DIR__/systemd/zdt-healthcheck.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
