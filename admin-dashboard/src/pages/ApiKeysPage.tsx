@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { getApiKeys, generateKey, revokeKey, deleteKey } from '../api/client';
 import type { ApiKey, KeyGenerateResponse } from '../types';
-import { Key, Plus, Trash2, Copy, Check } from 'lucide-react';
+import { Key, Plus, Trash2, Copy, Check, Search } from 'lucide-react';
 
 export default function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [search, setSearch] = useState('');
+  const filtered = search ? keys.filter(k => k.label.toLowerCase().includes(search.toLowerCase()) || k.key_id.toLowerCase().includes(search.toLowerCase()) || (k.host+':'+k.port).includes(search)) : keys;
   const [showGen, setShowGen] = useState(false);
   const [generated, setGenerated] = useState<KeyGenerateResponse | null>(null);
   const [copied, setCopied] = useState(false);
@@ -46,107 +48,127 @@ export default function ApiKeysPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">API Keys</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage access keys for external services</p>
+          <h2 className="text-xl font-semibold text-base-content">API Keys</h2>
+          <p className="text-sm text-base-content/60 mt-1">Manage access keys for external services</p>
         </div>
         <button onClick={() => { setShowGen(true); setGenerated(null); }}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer">
+          className="btn btn-primary">
           <Plus size={18} /> Generate Key
         </button>
       </div>
 
       {generated && (
-        <div className="rounded-2xl border border-brand-200 dark:border-brand-500/30 bg-brand-50 dark:bg-brand-500/5 p-5 md:p-6">
+        <div className="card bg-primary/5 border border-primary/20 p-5 md:p-6">
           <div className="flex items-center gap-2 mb-3">
-            <Key className="text-brand-600 dark:text-brand-400" size={18} />
-            <span className="text-brand-600 dark:text-brand-400 font-semibold text-sm">New Key Generated!</span>
+            <Key className="text-primary" size={18} />
+            <span className="text-primary font-semibold text-sm">New Key Generated!</span>
           </div>
-          <div className="bg-white dark:bg-gray-900 rounded-lg p-3 font-mono text-xs text-brand-600 dark:text-brand-400 break-all mb-3 max-h-24 overflow-auto border border-brand-100 dark:border-brand-500/20">
+          <div className="bg-base-100 rounded-lg p-3 font-mono text-xs text-primary break-all mb-3 max-h-24 overflow-auto border border-primary/20">
             {generated.smart_key}
           </div>
           <div className="flex gap-2">
             <button onClick={() => copyToClipboard(generated.smart_key)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-500 text-white text-xs font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer">
+              className="btn btn-primary">
               {copied ? <Check size={16} /> : <Copy size={16} />}{copied ? 'Copied!' : 'Copy Key'}
             </button>
             <button onClick={() => setGenerated(null)}
-              className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-xs hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Dismiss</button>
+              className="btn btn-ghost btn-xs">Dismiss</button>
           </div>
         </div>
       )}
 
-      {error && <div className="text-error-600 dark:text-error-500 text-sm">{error}</div>}
+      {error && <div className="text-error text-sm">{error}</div>}
 
       {showGen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
-          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 w-[450px] max-w-[90%] shadow-theme-md">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-5">Generate API Key</h3>
+          <div className="card bg-base-100 border border-base-200 p-6 w-[450px] max-w-[90%] shadow-md">
+            <h3 className="text-lg font-semibold text-base-content mb-5">Generate API Key</h3>
             <div className="mb-4">
-              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">HOST</label>
+              <label className="block text-sm text-base-content/60 mb-1">HOST</label>
               <input value={host} onChange={e => setHost(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" />
+                className="input input-bordered w-full" />
             </div>
             <div className="flex gap-3 mb-4">
               <div className="flex-1">
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">PORT</label>
+                <label className="block text-sm text-base-content/60 mb-1">PORT</label>
                 <input type="number" value={port} onChange={e => setPort(Number(e.target.value))}
-                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" />
+                  className="input input-bordered w-full" />
               </div>
               <div className="flex-1">
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">DAYS</label>
+                <label className="block text-sm text-base-content/60 mb-1">DAYS</label>
                 <input type="number" value={days} onChange={e => setDays(Number(e.target.value))}
-                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" />
+                  className="input input-bordered w-full" />
               </div>
             </div>
             <div className="mb-4">
-              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">LABEL</label>
+              <label className="block text-sm text-base-content/60 mb-1">LABEL</label>
               <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. HP Zaki"
-                className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" />
+                className="input input-bordered w-full" />
             </div>
             <div className="mb-6">
-              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">ROLE</label>
+              <label className="block text-sm text-base-content/60 mb-1">ROLE</label>
               <select value={role} onChange={e => setRole(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors">
+                className="select select-bordered w-full">
                 <option value="full">Full Access</option>
                 <option value="read-only">Read Only</option>
               </select>
             </div>
             <div className="flex gap-3">
               <button onClick={handleGenerate}
-                className="flex-1 py-3 rounded-lg bg-brand-500 text-white font-medium text-sm hover:bg-brand-600 transition-colors border-none cursor-pointer">Generate</button>
+                className="btn btn-primary flex-1">Generate</button>
               <button onClick={() => setShowGen(false)}
-                className="px-6 py-3 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Cancel</button>
+                className="btn btn-ghost">Cancel</button>
             </div>
           </div>
         </div>
       )}
 
-      <div className="space-y-2">
-        {keys.map((key) => (
-          <div key={key.id} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-4 flex justify-between items-center gap-3">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Key size={14} className={key.active ? 'text-brand-500' : 'text-error-500'} />
-                <span className="text-sm text-gray-800 dark:text-white/90 font-mono">{key.key_id.substring(0, 20)}...</span>
-                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  key.active ? 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' : 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500'
-                }`}>{key.active ? 'Active' : 'Revoked'}</span>
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">{key.label} · {key.host}:{key.port} · {key.role}</div>
-            </div>
-            <div className="flex gap-2">
-              {key.active && (
-                <button onClick={() => handleRevoke(key.key_id)}
-                  className="p-2 rounded-md bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500 border-none cursor-pointer hover:bg-error-100 dark:hover:bg-error-500/20 transition-colors"><Trash2 size={14} /></button>
-              )}
-              {!key.active && (
-                <button onClick={() => handleDelete(key.key_id)}
-                  className="px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-none cursor-pointer text-xs hover:text-gray-700 dark:hover:text-gray-300 transition-colors">Delete</button>
-              )}
+      <div className="card bg-base-100 border border-base-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-base-200">
+            <div className="flex items-center gap-2">
+              <Search size={16} className="text-base-content/60 shrink-0" />
+              <input placeholder="Cari API key..." value={search} onChange={e => setSearch(e.target.value)}
+                className="input input-bordered w-full max-w-sm" />
             </div>
           </div>
-        ))}
-        {keys.length === 0 && <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">No API keys yet. Generate one!</div>}
+        <table className="table w-full">
+          <thead>
+            <tr className="bg-base-200/50">
+              <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider px-4 py-3">Key ID</th>
+              <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider px-4 py-3">Label</th>
+              <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider px-4 py-3">Host:Port</th>
+              <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider px-4 py-3">Role</th>
+              <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider px-4 py-3">Status</th>
+              <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider px-4 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((key) => (
+              <tr key={key.id} className="hover:bg-base-200/30 transition-colors">
+                <td className="px-4 py-3 text-sm text-base-content font-mono">{key.key_id.substring(0, 20)}...</td>
+                <td className="px-4 py-3 text-sm text-base-content">{key.label}</td>
+                <td className="px-4 py-3 text-sm text-base-content/60">{key.host}:{key.port}</td>
+                <td className="px-4 py-3 text-sm text-base-content/60">{key.role}</td>
+                <td className="px-4 py-3">
+                  <span className={`badge ${key.active ? 'badge-success' : 'badge-error'}`}>{key.active ? 'Active' : 'Revoked'}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-1">
+                    {key.active && (
+                      <button onClick={() => handleRevoke(key.key_id)}
+                        className="btn btn-ghost btn-xs text-error"><Trash2 size={14} /> Revoke</button>
+                    )}
+                    {!key.active && (
+                      <button onClick={() => handleDelete(key.key_id)}
+                        className="btn btn-ghost btn-xs">Delete</button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {filtered.length === 0 && <div className="text-center py-10 text-sm text-base-content/60">No API keys yet. Generate one!</div>}
       </div>
     </div>
   );

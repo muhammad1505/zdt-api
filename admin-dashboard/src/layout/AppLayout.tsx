@@ -13,7 +13,7 @@ function LayoutContent({ username, role, onLogout }: Props) {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
 
   return (
-    <div className="min-h-screen xl:flex bg-gray-50 dark:bg-gray-950">
+    <div className="min-h-screen xl:flex bg-base-200">
       <AppSidebar userRole={role} />
       <div className={`flex-1 transition-all duration-300 ease-in-out pt-[57px] lg:pt-[61px] ${
         isExpanded || isHovered ? 'lg:ml-[290px]' : 'lg:ml-[90px]'

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Sun, Moon } from 'lucide-react';
 import { useSidebar } from '../context/SidebarContext';
-import api, { apiSilent, getProfile, updateProfile, changePassword, getNotifSettings, saveNotifSettings, getLastSeenNotifId, setLastSeenNotifId } from '../api/client';
+import { apiSilent, getProfile, updateProfile, changePassword } from '../api/client';
 import type { Activity } from '../utils/notifications';
 import { fmtTime, eventLabel, notifGroupKey, notifGroupLabel, notifGroupIcon, playCategorySound, CATEGORIES, SOUND_PROFILES } from '../utils/notifications';
 
@@ -46,7 +46,8 @@ export default function AppHeader({ username, onLogout }: Props) {
 
   // Load notification settings from backend on mount (override localStorage)
   useEffect(() => {
-    getNotifSettings().then(settings => {
+    apiSilent.get('/api/admin/notifications/settings').then(res => {
+      const settings = res.data;
       setNotifSoundEnabled(settings.sound);
       setNotifDesktopEnabled(settings.desktop);
       localStorage.setItem('zdt_notif_sound', String(settings.sound));
@@ -58,9 +59,9 @@ export default function AppHeader({ username, onLogout }: Props) {
 
   // Load last seen notification ID from backend on mount (cross-session unread tracking)
   useEffect(() => {
-    getLastSeenNotifId().then(data => {
-      if (data.last_seen_id > 0) {
-        lastNotifId.current = data.last_seen_id;
+    apiSilent.get('/api/admin/notifications/last-seen').then(res => {
+      if (res.data.last_seen_id > 0) {
+        lastNotifId.current = res.data.last_seen_id;
       }
     }).catch(() => {});
   }, []);
@@ -84,16 +85,24 @@ export default function AppHeader({ username, onLogout }: Props) {
       (!localStorage.getItem('zdt_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
   });
 
+  const applyTheme = useCallback((dark: boolean) => {
+    if (dark) {
+      document.documentElement.classList.add('dark');
+      document.documentElement.dataset.theme = 'dark';
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.dataset.theme = 'light';
+    }
+  }, []);
+
+  useEffect(() => {
+    applyTheme(isDark);
+  }, [applyTheme, isDark]);
+
   const toggleTheme = useCallback(() => {
     const next = !isDark;
     setIsDark(next);
-    if (next) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('zdt_theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('zdt_theme', 'light');
-    }
+    localStorage.setItem('zdt_theme', next ? 'dark' : 'light');
   }, [isDark]);
 
   // Keyboard shortcuts — moved after toggleTheme definition so toggleTheme is in scope
@@ -189,7 +198,7 @@ export default function AppHeader({ username, onLogout }: Props) {
       }).catch(() => {});
       // Persist last seen ID to backend so unread count survives page refresh
       if (lastNotifId.current > 0) {
-        setLastSeenNotifId(lastNotifId.current).catch(() => {});
+        apiSilent.post('/api/admin/notifications/last-seen', { last_seen_id: lastNotifId.current }).catch(() => {});
       }
     }
   }, [notifOpen]);
@@ -225,11 +234,11 @@ export default function AppHeader({ username, onLogout }: Props) {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 flex w-full bg-white border-gray-200 z-99999 dark:border-gray-800 dark:bg-gray-900 lg:border-b">
-      <div className="flex items-center justify-between w-full gap-2 px-3 py-3 border-b border-gray-200 dark:border-gray-800 sm:gap-4 lg:border-b-0 lg:px-6 lg:py-4">
+    <header className="fixed top-0 left-0 right-0 flex w-full bg-base-100 border-base-200 z-99999 lg:border-b">
+      <div className="flex items-center justify-between w-full gap-2 px-3 py-3 border-b border-base-200 sm:gap-4 lg:border-b-0 lg:px-6 lg:py-4">
         <button
           onClick={handleToggle}
-          className="items-center justify-center w-10 h-10 text-gray-500 border-gray-200 rounded-lg dark:border-gray-800 lg:flex dark:text-gray-400 lg:h-11 lg:w-11 lg:border hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          className="items-center justify-center w-10 h-10 text-base-content/60 border-base-200 rounded-lg lg:flex lg:h-11 lg:w-11 lg:border hover:bg-base-200 transition-colors"
           aria-label="Toggle Sidebar"
         >
           {isMobileOpen ? (
@@ -244,14 +253,14 @@ export default function AppHeader({ username, onLogout }: Props) {
         </button>
 
         <div className="flex items-center gap-2 lg:hidden">
-          <div className="w-7 h-7 rounded-md bg-brand-500 flex items-center justify-center">
+          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /></svg>
           </div>
-          <span className="font-bold text-sm text-gray-800 dark:text-white/90">ZDT API</span>
+          <span className="font-bold text-sm text-base-content">ZDT API</span>
         </div>
 
         <div className="hidden lg:flex items-center gap-2 ml-4">
-          <span className="text-sm text-gray-500 dark:text-gray-400">Admin Dashboard</span>
+          <span className="text-sm text-base-content/60">Admin Dashboard</span>
         </div>
 
         <div className="flex items-center gap-1.5 ml-auto">
@@ -259,19 +268,19 @@ export default function AppHeader({ username, onLogout }: Props) {
           <div className="relative group">
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors border-none cursor-pointer"
+              className="btn btn-ghost btn-sm"
               aria-label="Toggle theme"
               title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             {/* Persistence indicator tooltip */}
-            <div className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-success-500 border border-white dark:border-gray-900"
+            <div className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-success border border-base-100"
               title="Theme saved to localStorage"
             />
             {/* Tooltip on hover */}
-            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 rounded bg-gray-900 dark:bg-gray-700 text-white text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-sm">
-              {isDark ? 'Dark mode' : 'Light mode'} · Press <kbd className="px-1 py-0.5 rounded bg-gray-700 dark:bg-gray-600 text-[9px] font-mono">T</kbd>
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 rounded bg-base-300 text-white text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-sm">
+              {isDark ? 'Dark mode' : 'Light mode'} · Press <kbd className="px-1 py-0.5 rounded bg-base-300 text-[9px] font-mono">T</kbd>
             </div>
           </div>
 
@@ -279,91 +288,91 @@ export default function AppHeader({ username, onLogout }: Props) {
           <div className="relative" ref={notifRef}>
             <button
               onClick={() => setNotifOpen(!notifOpen)}
-              className="relative p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors border-none cursor-pointer"
+              className="relative btn btn-ghost btn-sm"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
               {(unreadCount > 0 || notifications.length > 0) && (
-                <span className={`absolute -top-1 -right-1 rounded-full flex items-center justify-center ring-2 ring-white dark:ring-gray-900 ${
+                <span className={`absolute -top-1 -right-1 rounded-full flex items-center justify-center ring-2 ring-base-100 ${
                   unreadCount > 0
-                    ? 'w-5 h-5 bg-error-500 text-white text-[9px] font-bold'
-                    : 'w-3 h-3 bg-gray-400'
+                    ? 'badge badge-error badge-sm text-[9px]'
+                    : 'w-3 h-3 bg-base-300'
                 }`}>
                   {unreadCount > 0 ? (unreadCount > 9 ? '9+' : unreadCount) : ''}
                 </span>
               )}
             </button>
             {notifOpen && (
-              <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-theme-md py-3 z-[99999]">
-                <div className="px-4 pb-2 mb-2 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                  <h4 className="text-sm font-semibold text-gray-800 dark:text-white/90">Notifications</h4>
+              <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-base-200 bg-base-100 shadow-md py-3 z-[99999]">
+                <div className="px-4 pb-2 mb-2 border-b border-base-200 flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-base-content">Notifications</h4>
                   <div className="flex items-center gap-2">
                     {notifications.length > 0 && (
                       <>
                         <button
                           onClick={() => {
                             if (lastNotifId.current > 0) {
-                              setLastSeenNotifId(lastNotifId.current).catch(() => {});
+                              apiSilent.post('/api/admin/notifications/last-seen', { last_seen_id: lastNotifId.current }).catch(() => {});
                             }
                             setUnreadCount(0);
                           }}
-                          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-none cursor-pointer transition-colors"
+                          className="btn btn-ghost btn-xs"
                         >
                           Mark read
                         </button>
-                        <span className="text-[10px] text-gray-300 dark:text-gray-600">·</span>
+                        <span className="text-[10px] text-base-content/40">·</span>
                         <button
                           onClick={() => {
-                            api.post('/api/admin/activity/clear').then(() => {
+                            apiSilent.post('/api/admin/activity/clear').then(() => {
                               setNotifications([]);
                               setUnreadCount(0);
                             }).catch(() => {});
                           }}
-                          className="text-xs text-gray-400 hover:text-error-500 dark:hover:text-error-400 bg-transparent border-none cursor-pointer transition-colors"
+                          className="btn btn-ghost btn-xs text-error"
                         >
                           Clear all
                         </button>
                       </>
                     )}
-                    <Link to="/notifications" className="text-xs text-brand-500 hover:underline no-underline">View all</Link>
+                    <Link to="/notifications" className="text-xs text-primary hover:underline no-underline">View all</Link>
                   </div>
                 </div>
                 {/* Notification preferences toggles */}
-                <div className="px-4 pb-3 mb-2 border-b border-gray-100 dark:border-gray-800 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
-                  <label className="flex items-center gap-1.5 cursor-pointer select-none text-gray-500 dark:text-gray-400">
+                <div className="px-4 pb-3 mb-2 border-b border-base-200 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none text-base-content/60">
                     <input type="checkbox" checked={notifSoundEnabled}
                       onChange={(e) => {
                         const v = e.target.checked;
                         setNotifSoundEnabled(v);
                         localStorage.setItem('zdt_notif_sound', String(v));
-                        saveNotifSettings({ sound: v }).catch(() => {});
+                        apiSilent.post('/api/admin/notifications/settings', { sound: v }).catch(() => {});
                       }}
-                      className="w-3.5 h-3.5 accent-amber-500" />
+                      className="checkbox checkbox-sm" />
                     Sound
                   </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer select-none text-gray-500 dark:text-gray-400">
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none text-base-content/60">
                     <input type="checkbox" checked={notifDesktopEnabled}
                       onChange={(e) => {
                         const v = e.target.checked;
                         setNotifDesktopEnabled(v);
                         localStorage.setItem('zdt_notif_desktop', String(v));
-                        saveNotifSettings({ desktop: v }).catch(() => {});
+                        apiSilent.post('/api/admin/notifications/settings', { desktop: v }).catch(() => {});
                       }}
-                      className="w-3.5 h-3.5 accent-amber-500" />
+                      className="checkbox checkbox-sm" />
                     Desktop
                   </label>
                   <button
                     onClick={() => setSoundPreviewOpen(true)}
-                    className="text-xs text-gray-400 hover:text-brand-500 dark:hover:text-brand-400 bg-transparent border border-gray-200 dark:border-gray-700 rounded px-2 py-0.5 cursor-pointer transition-colors"
+                    className="btn btn-ghost btn-xs"
                     title="Preview individual notification sounds"
                   >
                     Test sounds
                   </button>
                 </div>
                 {notifications.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-xs text-gray-400">No notifications</div>
+                  <div className="px-4 py-6 text-center text-xs text-base-content/60">No notifications</div>
                 ) : (
                   <div className="max-h-[320px] overflow-y-auto">
                     {(() => {
@@ -380,22 +389,22 @@ export default function AppHeader({ username, onLogout }: Props) {
                         return (
                           <div key={key}>
                             {/* Group header */}
-                            <div className="flex items-center gap-1.5 px-4 py-1.5 bg-gray-50/80 dark:bg-gray-800/40 border-b border-gray-100 dark:border-gray-800/50">
+                            <div className="flex items-center gap-1.5 px-4 py-1.5 bg-base-200/80 border-b border-base-200/50">
                               <span className="text-[11px]">{notifGroupIcon(key)}</span>
-                              <span className={`text-[11px] font-semibold uppercase tracking-wider ${isErrorGroup ? 'text-error-600 dark:text-error-500' : 'text-gray-500 dark:text-gray-400'}`}>
+                              <span className={`text-[11px] font-semibold uppercase tracking-wider ${isErrorGroup ? 'text-error' : 'text-base-content/60'}`}>
                                 {notifGroupLabel(key)}
                               </span>
-                              <span className={`ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded-full ${isErrorGroup ? 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>
+                              <span className={`ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded-full ${isErrorGroup ? 'bg-error/10 text-error' : 'bg-base-300 text-base-content/60'}`}>
                                 {items.length}
                               </span>
                             </div>
                             {/* Latest item in group */}
-                            <div className="px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 border-b border-gray-50 dark:border-gray-800/50 last:border-0">
+                            <div className="px-4 py-2.5 hover:bg-base-200/50 border-b border-base-200/50 last:border-0">
                               <div className="flex items-start gap-2.5">
-                                <span className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${isErrorGroup ? 'bg-error-500' : 'bg-success-500'}`} />
+                                <span className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${isErrorGroup ? 'bg-error' : 'bg-success'}`} />
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-xs text-gray-800 dark:text-white/90 font-medium truncate">{eventLabel(latest)}</p>
-                                  <p className="text-[10px] text-gray-400 mt-0.5">
+                                  <p className="text-xs text-base-content font-medium truncate">{eventLabel(latest)}</p>
+                                  <p className="text-[10px] text-base-content/60 mt-0.5">
                                     {latest.status_code >= 400 ? `Error ${latest.status_code}` : latest.status_code} · {fmtTime(latest.created_at)}
                                   </p>
                                 </div>
@@ -415,44 +424,44 @@ export default function AppHeader({ username, onLogout }: Props) {
           <div className="relative" ref={userRef}>
             <button
               onClick={() => setUserOpen(!userOpen)}
-              className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-xs hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors border-none cursor-pointer"
+              className="flex items-center gap-2.5 btn btn-ghost btn-sm"
             >
-              <div className="w-7 h-7 rounded-full bg-brand-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
+              <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
                 {username.charAt(0).toUpperCase()}
               </div>
               <div className="hidden sm:block text-left leading-tight">
-                <div className="text-sm font-medium text-gray-800 dark:text-white/90 -mt-0.5">{username}</div>
-                <div className="text-[10px] text-gray-400">Administrator</div>
+                <div className="text-sm font-medium text-base-content -mt-0.5">{username}</div>
+                <div className="text-[10px] text-base-content/60">Administrator</div>
               </div>
-              <svg className={`w-3 h-3 text-gray-400 transition-transform shrink-0 ${userOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
+              <svg className={`w-3 h-3 text-base-content/60 transition-transform shrink-0 ${userOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
             </button>
             {userOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-theme-md py-2 z-[99999]">
-                <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-brand-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
+              <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-base-200 bg-base-100 shadow-md py-2 z-[99999]">
+                <div className="px-4 py-3 border-b border-base-200 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white text-sm font-bold shrink-0">
                     {username.charAt(0).toUpperCase()}
                   </div>
                   <div className="leading-tight">
-                    <div className="text-sm font-semibold text-gray-800 dark:text-white/90">{username}</div>
-                    <div className="text-xs text-gray-400">@{username.toLowerCase()}</div>
+                    <div className="text-sm font-semibold text-base-content">{username}</div>
+                    <div className="text-xs text-base-content/60">@{username.toLowerCase()}</div>
                   </div>
                 </div>
                 <div className="py-1">
                   <button onClick={openProfile}
-                    className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-none cursor-pointer">
+                    className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-base-content/80 hover:bg-base-200 transition-colors border-none cursor-pointer">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                     Profile
                   </button>
                   <button onClick={openProfile}
-                    className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-none cursor-pointer">
+                    className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-base-content/80 hover:bg-base-200 transition-colors border-none cursor-pointer">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
                     Account Settings
                   </button>
                 </div>
-                <div className="border-t border-gray-100 dark:border-gray-800 pt-1">
+                <div className="border-t border-base-200 pt-1">
                   <button
                     onClick={() => { setUserOpen(false); onLogout(); }}
-                    className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-none cursor-pointer"
+                    className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-base-content/80 hover:bg-base-200 transition-colors border-none cursor-pointer"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -470,24 +479,24 @@ export default function AppHeader({ username, onLogout }: Props) {
 
       {/* Help Modal */}
       {helpOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[999999]" onClick={() => setHelpOpen(false)}>
-          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 w-[340px] max-w-[95vw] shadow-theme-md py-5 px-5" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[999999] animate-fadeIn" onClick={() => setHelpOpen(false)}>
+          <div className="card bg-base-100 border border-base-200 w-[340px] max-w-[95vw] shadow-md py-5 px-5 animate-scaleIn" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90">Keyboard Shortcuts</h3>
+              <h3 className="text-sm font-semibold text-base-content">Keyboard Shortcuts</h3>
               <button onClick={() => setHelpOpen(false)}
-                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-none cursor-pointer transition-colors">
+                className="btn btn-ghost btn-xs">
                 Close
               </button>
             </div>
             <div className="space-y-2">
               {SHORTCUTS.map(s => (
-                <div key={s.key} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 dark:bg-gray-800">
-                  <span className="text-xs text-gray-600 dark:text-gray-300">{s.description}</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-xs font-mono text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 min-w-[24px] text-center">{s.key}</kbd>
+                <div key={s.key} className="flex items-center justify-between py-2 px-3 rounded-lg bg-base-200">
+                  <span className="text-xs text-base-content/80">{s.description}</span>
+                  <kbd className="px-2 py-0.5 rounded bg-base-300 text-xs font-mono text-base-content/80 border border-base-300 min-w-[24px] text-center">{s.key}</kbd>
                 </div>
               ))}
             </div>
-            <div className="mt-4 text-[10px] text-gray-400 text-center">
+            <div className="mt-4 text-[10px] text-base-content/60 text-center">
               Shortcuts are disabled when typing in input fields
             </div>
           </div>
@@ -496,12 +505,12 @@ export default function AppHeader({ username, onLogout }: Props) {
 
       {/* Sound Preview Modal */}
       {soundPreviewOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[999999]" onClick={() => setSoundPreviewOpen(false)}>
-          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 w-[380px] max-w-[95vw] shadow-theme-md py-5 px-5" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[999999] animate-fadeIn" onClick={() => setSoundPreviewOpen(false)}>
+          <div className="card bg-base-100 border border-base-200 w-[380px] max-w-[95vw] shadow-md py-5 px-5 animate-scaleIn" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90">Notification Sounds</h3>
+              <h3 className="text-sm font-semibold text-base-content">Notification Sounds</h3>
               <button onClick={() => setSoundPreviewOpen(false)}
-                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-none cursor-pointer transition-colors">
+                className="btn btn-ghost btn-xs">
                 Close
               </button>
             </div>
@@ -515,15 +524,15 @@ export default function AppHeader({ username, onLogout }: Props) {
                     }
                   }}
                   disabled={!notifSoundEnabled}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-transparent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-base-200 text-xs text-base-content/80 hover:bg-base-200 transition-colors bg-transparent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <span className="text-xs">{notifGroupIcon(cat)}</span>
                   <span className="flex-1 text-left">{notifGroupLabel(cat)}</span>
-                  <span className="text-[10px] text-gray-400 font-mono">{SOUND_PROFILES[cat].freq}Hz</span>
+                  <span className="text-[10px] text-base-content/60 font-mono">{SOUND_PROFILES[cat].freq}Hz</span>
                 </button>
               ))}
             </div>
-            <div className="mt-3 text-[10px] text-gray-400 text-center">
+            <div className="mt-3 text-[10px] text-base-content/60 text-center">
               {notifSoundEnabled ? 'Click a category to preview its sound' : 'Enable Sound toggle above to preview'}
             </div>
           </div>
@@ -532,35 +541,35 @@ export default function AppHeader({ username, onLogout }: Props) {
 
       {/* Profile Edit Modal */}
       {profileOpen && profileData && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[999999]" onClick={() => setProfileOpen(false)}>
-          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 w-[440px] max-w-[95vw] shadow-theme-md py-6 px-6" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 mb-5">Edit Profile</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[999999] animate-fadeIn" onClick={() => setProfileOpen(false)}>
+          <div className="card bg-base-100 border border-base-200 w-[440px] max-w-[95vw] shadow-md py-6 px-6 animate-scaleIn" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-semibold text-base-content mb-5">Edit Profile</h3>
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-1.5">Username</label>
+                <label className="text-xs font-medium text-base-content/60 block mb-1.5">Username</label>
                 <input value={profileData.username} disabled
-                  className="w-full px-3 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm outline-none box-border" />
+                  className="input input-bordered w-full opacity-60" />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-1.5">Display Name / Label</label>
+                <label className="text-xs font-medium text-base-content/60 block mb-1.5">Display Name / Label</label>
                 <input value={editLabel} onChange={e => setEditLabel(e.target.value)} placeholder="Your display name"
-                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" />
+                  className="input input-bordered w-full" />
               </div>
-              <div className="border-t border-gray-100 dark:border-gray-800 pt-4">
-                <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-3">Change Password (optional)</h4>
+              <div className="border-t border-base-200 pt-4">
+                <h4 className="text-xs font-semibold text-base-content/80 mb-3">Change Password (optional)</h4>
                 <div className="space-y-3">
                   <input value={oldPass} onChange={e => setOldPass(e.target.value)} type="password" placeholder="Current password"
-                    className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" />
+                    className="input input-bordered w-full" />
                   <input value={newPass} onChange={e => setNewPass(e.target.value)} type="password" placeholder="New password"
-                    className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" />
+                    className="input input-bordered w-full" />
                 </div>
               </div>
             </div>
             <div className="flex gap-3 justify-end mt-6">
               <button onClick={() => setProfileOpen(false)}
-                className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Cancel</button>
+                className="btn btn-ghost btn-sm">Cancel</button>
               <button onClick={saveProfile}
-                className="px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer">Save Changes</button>
+                className="btn btn-primary">Save Changes</button>
             </div>
           </div>
         </div>

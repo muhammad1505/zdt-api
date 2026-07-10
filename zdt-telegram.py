@@ -29,6 +29,9 @@ YT_DLP = shutil.which('yt-dlp') or os.path.expanduser('~/.local/bin/yt-dlp')
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 if not TOKEN:
+    import config as _zdt_config
+    TOKEN = _zdt_config.config.get('TELEGRAM_BOT_TOKEN', '')
+if not TOKEN:
     TOKEN_FILE = ZdtPaths.get_telegram_token_path()
     if os.path.exists(TOKEN_FILE):
         try:
@@ -37,9 +40,6 @@ if not TOKEN:
             pass
         with open(TOKEN_FILE, 'r') as f:
             TOKEN = f.read().strip()
-if not TOKEN:
-    import config as _zdt_config
-    TOKEN = _zdt_config.config.get('TELEGRAM_BOT_TOKEN', '')
 
 if not TOKEN:
     print("Token Telegram tidak ditemukan di konfigurasi atau env var!")
@@ -88,6 +88,19 @@ def _safe_popen(cmd_args, **kwargs):
     if 'stdout' in kwargs and kwargs['stdout'] == subprocess.PIPE:
         kwargs['stderr'] = subprocess.STDOUT
     return subprocess.Popen(cmd_args, **kwargs)
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'zdt_api.db')
+
+def _record_download(url: str, fmt: str = 'audio', status: str = 'completed', title: str = ''):
+    """Record a download in the shared database for unified statistics."""
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=5)
+        conn.execute("INSERT INTO downloads (url, title, format, status, completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))",
+                     (url, title or url.rsplit('/', 1)[-1], fmt, status))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 import logging
 logging.basicConfig(
@@ -318,15 +331,7 @@ def download_video(message):
     if not urls:
         bot.reply_to(message, "❌ Link tidak valid! Contoh: `/video https://youtube.com/...`", parse_mode="Markdown")
         return
-        
-    url = urls[0]
-    bot.reply_to(message, f"⏳ *Sedang Mendownload Video...*\n📍 `Server` sedang memproses link Anda.", parse_mode="Markdown")
-    
-    try:
-        with open(os.devnull, 'w') as devnull:
-            subprocess.Popen([get_zdt_bin(), "--download-video", url], stdout=devnull, stderr=devnull, start_new_session=True)
-    except Exception as e:
-        bot.reply_to(message, f"❌ Terjadi kesalahan: {str(e)}")
+    start_dl_flow(message, urls[0])
 
 @bot.message_handler(commands=['audio'])
 def download_audio_cmd(message):
@@ -335,15 +340,7 @@ def download_audio_cmd(message):
     if not urls:
         bot.reply_to(message, "❌ Link tidak valid! Contoh: `/audio https://spotify.com/...`", parse_mode="Markdown")
         return
-        
-    url = urls[0]
-    bot.reply_to(message, f"⏳ *Sedang Mendownload Audio...*\n📍 `Server` sedang menyedot musik Anda.", parse_mode="Markdown")
-    
-    try:
-        with open(os.devnull, 'w') as devnull:
-            subprocess.Popen([get_zdt_bin(), "--download-audio", url], stdout=devnull, stderr=devnull, start_new_session=True)
-    except Exception as e:
-        bot.reply_to(message, f"❌ Terjadi kesalahan: {str(e)}")
+    start_dl_flow(message, urls[0])
 
 @bot.message_handler(func=lambda message: True)
 def auto_download_audio(message):
@@ -479,6 +476,18 @@ Chat: {history_context}"""
                             else:
                                 action = "kompres media"
 
+                        elif re.search(r'(cari|search|carikan)', kw):
+                            query = re.sub(r'.*?(cari|search|carikan)\s*', '', kw, flags=re.I).strip()
+                            for _ in range(5):
+                                prev = query
+                                query = re.sub(r'^(link|lagu|musik|video|youtube|dung|in|kan|dong|yah|ya|bro|bang|tolong|bantu|minta|kak|mas|nih)\s+', '', query, flags=re.I).strip()
+                                if query == prev:
+                                    break
+                            query = re.sub(r'\s+', ' ', query).strip()
+                            if query and len(query) > 2:
+                                action = f"cari youtube {query}"
+                            else:
+                                action = "cari youtube "
                         elif re.search(r'(lirik|sync.*lirik|lyric|cari.*lirik)', kw):
                             action = "sync lirik"
 
@@ -549,6 +558,8 @@ Chat: {history_context}"""
                                         import html
                                             
                                         if process.returncode == 0:
+                                            if cmd_args and cmd_args[0] in ('--download-audio', '--download-video') and len(cmd_args) > 1:
+                                                _record_download(cmd_args[1], 'video' if 'video' in cmd_args[0] else 'audio')
                                             if progress_msg:
                                                 try:
                                                     bot.edit_message_text(f"✅ <b>{success_msg}</b>\n\n📄 <b>Log Terakhir:</b>\n<pre>{html.escape(final_context)}</pre>", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id, parse_mode="HTML")
@@ -679,21 +690,22 @@ Chat: {history_context}"""
                                                 t = html.escape(title)
                                                 formatted.append(f"{idx}. <b>{t}</b>\n{url}")
                                                 urls.append(f"{idx}) {url}")
-                                                row_btns.append(InlineKeyboardButton(f"{idx}", callback_data=f"SRCH_DL:{url}"))
+                                                row_btns.append(InlineKeyboardButton(f"{idx}", callback_data=f"SRCH_DL:{idx}"))
                                             markup.row(*row_btns)
                                             
                                             nav = []
                                             if page > 0:
-                                                nav.append(InlineKeyboardButton("⬅️ Sebelumnya", callback_data=f"SRCH_PAGE:{query}:{page - 1}"))
+                                                nav.append(InlineKeyboardButton("⬅️ Sebelumnya", callback_data=f"SRCH_PG:{page - 1}"))
                                             if page + 1 < total_pages:
-                                                nav.append(InlineKeyboardButton(f"➡️ Selanjutnya ({page+2}/{total_pages})", callback_data=f"SRCH_PAGE:{query}:{page + 1}"))
+                                                nav.append(InlineKeyboardButton(f"➡️ Selanjutnya ({page+2}/{total_pages})", callback_data=f"SRCH_PG:{page + 1}"))
                                             if nav:
                                                 markup.row(*nav)
                                             
                                             with chat_history_lock:
                                                 if chat_history.get(message.chat.id):
                                                     chat_history[message.chat.id]["search_results"] = urls
-                                                
+                                                    chat_history[message.chat.id]["search_query"] = query
+
                                             out_text = "\n\n".join(formatted)
                                             bot.reply_to(message, f"🎯 <b>Hasil Pencarian:</b>\n\n{out_text}", parse_mode="HTML", reply_markup=markup, link_preview_options=telebot.types.LinkPreviewOptions(is_disabled=True))
                                         else:
@@ -872,13 +884,160 @@ Chat: {history_context}"""
         return
         
     url = [word for word in text.split() if "http" in word][0]
-    bot.reply_to(message, f"🎧 *Link Terdeteksi!*\nOtomatis mendownload sebagai Audio (MP3/M4A).", parse_mode="Markdown")
-    
+    start_dl_flow(message, url)
+
+# === Interactive Download Flow ===
+
+def start_dl_flow(msg_or_call, url, via_search=False):
+    """Start interactive download flow: choose format, quality, confirm."""
+    chat_id = msg_or_call.chat.id if hasattr(msg_or_call, 'chat') else msg_or_call.message.chat.id
+    if not hasattr(bot, 'user_data'):
+        bot.user_data = {}
+    bot.user_data[chat_id] = {'dl_url': url}
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("🎵 Audio", callback_data="dl_fmt:audio"),
+        InlineKeyboardButton("🎬 Video", callback_data="dl_fmt:video")
+    )
+    bot.send_message(chat_id, f"📥 *Pilih tipe download:*\n`{url}`", parse_mode="Markdown", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('dl_fmt:'))
+def dl_format_callback(call):
+    fmt = call.data.split(':')[1]
+    chat_id = call.message.chat.id
+    data = bot.user_data.get(chat_id, {})
+    if not data.get('dl_url'):
+        bot.answer_callback_query(call.id, "Sesi kadaluarsa, kirim ulang link.")
+        return
+    data['dl_format'] = fmt
+    if fmt == 'audio':
+        markup = InlineKeyboardMarkup()
+        markup.row(
+            InlineKeyboardButton("128kbps", callback_data="dl_abr:128"),
+            InlineKeyboardButton("192kbps", callback_data="dl_abr:192"),
+            InlineKeyboardButton("320kbps", callback_data="dl_abr:320"),
+        )
+        bot.edit_message_text("🎵 *Pilih Bitrate Audio:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+    else:
+        markup = InlineKeyboardMarkup()
+        markup.row(
+            InlineKeyboardButton("360p", callback_data="dl_vq:360"),
+            InlineKeyboardButton("720p", callback_data="dl_vq:720"),
+            InlineKeyboardButton("1080p", callback_data="dl_vq:1080"),
+        )
+        bot.edit_message_text("🎬 *Pilih Kualitas Video:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('dl_abr:'))
+def dl_bitrate_callback(call):
+    bitrate = call.data.split(':')[1]
+    chat_id = call.message.chat.id
+    data = bot.user_data.get(chat_id, {})
+    if not data.get('dl_url'):
+        bot.answer_callback_query(call.id, "Sesi kadaluarsa.")
+        return
+    data['dl_bitrate'] = bitrate
+    _dl_show_confirm(call.message, call.data)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('dl_vq:'))
+def dl_quality_callback(call):
+    quality = call.data.split(':')[1]
+    chat_id = call.message.chat.id
+    data = bot.user_data.get(chat_id, {})
+    if not data.get('dl_url'):
+        bot.answer_callback_query(call.id, "Sesi kadaluarsa.")
+        return
+    data['dl_quality'] = quality
+    _dl_show_confirm(call.message, call.data)
+
+
+def _dl_show_confirm(msg, _call_data):
+    """Show confirmation summary with Download / Cancel buttons."""
+    chat_id = msg.chat.id if hasattr(msg, 'chat') else msg.message.chat.id
+    message_id = msg.message_id if hasattr(msg, 'message_id') else msg.message.message_id
+    data = bot.user_data.get(chat_id, {})
+    url = data.get('dl_url', '?')
+    fmt = data.get('dl_format', '?')
+    detail = data.get('dl_bitrate', data.get('dl_quality', '?'))
+
+    summary = f"📥 *Konfirmasi Download*\n"
+    summary += f"🔗 `{url}`\n"
+    summary += f"📁 Format: {'🎵 Audio' if fmt == 'audio' else '🎬 Video'}\n"
+    summary += f"⚙️  Detail: {detail}{'kbps' if fmt == 'audio' else 'p'}\n\n"
+    summary += "_Lanjutkan download?_"
+
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("✅ Download", callback_data="dl_go"),
+        InlineKeyboardButton("❌ Batal", callback_data="dl_no")
+    )
     try:
-        with open(os.devnull, 'w') as devnull:
-            subprocess.Popen([get_zdt_bin(), "--download-audio", url], stdout=devnull, stderr=devnull, start_new_session=True)
-    except Exception as e:
-        bot.reply_to(message, f"❌ Terjadi kesalahan: {str(e)}")
+        bot.edit_message_text(summary, chat_id=chat_id, message_id=message_id, parse_mode="Markdown", reply_markup=markup)
+    except Exception:
+        bot.send_message(chat_id, summary, parse_mode="Markdown", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data in ('dl_go', 'dl_no'))
+def dl_confirm_callback(call):
+    chat_id = call.message.chat.id
+    data = bot.user_data.get(chat_id, {})
+    url = data.get('dl_url', '')
+    if call.data == 'dl_no' or not url:
+        bot.edit_message_text("❌ Download dibatalkan.", chat_id=chat_id, message_id=call.message.message_id)
+        bot.answer_callback_query(call.id, "Dibatalkan.")
+        bot.user_data.pop(chat_id, None)
+        return
+
+    fmt = data.get('dl_format', 'audio')
+    is_video = fmt == 'video'
+    cmd = ["--download-video" if is_video else "--download-audio", url]
+    label = "Video" if is_video else "Audio"
+
+    bot.edit_message_text(f"⏳ <b>Sedang Mendownload {label}...</b>\n📍 <code>{url}</code>", chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML")
+    bot.answer_callback_query(call.id, f"Download {label} dimulai!")
+    bot.user_data.pop(chat_id, None)
+
+    # Use run-style progress tracking
+    sent_msg = call.message
+    def _task():
+        try:
+            process = _safe_popen([get_zdt_bin()] + cmd, stdout=subprocess.PIPE, text=True, bufsize=1)
+            last_update = time.time()
+            log_buffer = []
+            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+            for line in iter(process.stdout.readline, ''):
+                if not line: break
+                clean_line = ansi_escape.sub('', line).strip()
+                if clean_line:
+                    if log_buffer and clean_line.startswith("[download]") and log_buffer[-1].startswith("[download]"):
+                        log_buffer[-1] = clean_line
+                    else:
+                        log_buffer.append(clean_line)
+                    log_buffer = log_buffer[-6:]
+                if time.time() - last_update > 3.0:
+                    context = "\n".join(log_buffer)
+                    import html
+                    try:
+                        bot.edit_message_text(f"⏳ <b>Download {label}</b>\n<pre>{html.escape(context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML")
+                    except Exception:
+                        pass
+                    last_update = time.time()
+            process.wait()
+            final_context = "\n".join(log_buffer)
+            import html
+            if process.returncode == 0:
+                _record_download(url, fmt)
+                bot.edit_message_text(f"✅ <b>{label} berhasil di-download!</b>\n\n<pre>{html.escape(final_context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML")
+            else:
+                bot.edit_message_text(f"❌ <b>Download {label} gagal.</b>\n\n<pre>{html.escape(final_context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML")
+        except Exception as e:
+            bot.edit_message_text(f"❌ System Error: {e}", chat_id=chat_id, message_id=sent_msg.message_id)
+
+    if not _safe_submit_task(_task):
+        bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=chat_id, message_id=sent_msg.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('cmd_'))
 def callback_query(call):
@@ -989,6 +1148,58 @@ def process_specific_file(call):
             
             process.wait()
             if process.returncode == 0:
+                if cmd_type == "do_demucs":
+                    try:
+                        name_no_ext = os.path.splitext(os.path.basename(filepath))[0]
+                        ext = os.path.splitext(filepath)[1].lower()
+                        base_dir = target_dir
+
+                        outdir = None
+                        for d in [os.path.join(base_dir, 'htdemucs', name_no_ext),
+                                  os.path.join(base_dir, name_no_ext)]:
+                            if os.path.isdir(d):
+                                outdir = d
+                                break
+                        if not outdir:
+                            for root, dirs, _ in os.walk(base_dir):
+                                for d in dirs:
+                                    if d == name_no_ext:
+                                        outdir = os.path.join(root, d)
+                                        break
+                                if outdir:
+                                    break
+
+                        if outdir:
+                            stem_map = {'vocals': 'vokal', 'no_vocals': 'novokal'}
+                            ffmpeg_opts_map = {
+                                '.m4a': ['-c:a', 'aac', '-b:a', '192k'],
+                                '.flac': ['-c:a', 'flac'],
+                                '.ogg': ['-c:a', 'libvorbis', '-q:a', '3'],
+                                '.opus': ['-c:a', 'libopus', '-b:a', '128k'],
+                                '.wav': ['-c:a', 'pcm_s16le'],
+                            }
+                            ffmpeg_opts = ffmpeg_opts_map.get(ext, ['-b:a', '192k'])
+
+                            for fname in os.listdir(outdir):
+                                if not fname.endswith('.wav'):
+                                    continue
+                                wav_path = os.path.join(outdir, fname)
+                                stem_name = os.path.splitext(fname)[0]
+                                stem_label = stem_map.get(stem_name, stem_name)
+                                output_path = os.path.join(base_dir, f'{name_no_ext}_{stem_label}{ext}')
+                                subprocess.run(['ffmpeg', '-y', '-i', wav_path] + ffmpeg_opts + [output_path, '-loglevel', 'error'],
+                                               capture_output=True, timeout=300)
+                                if os.path.exists(output_path):
+                                    os.remove(wav_path)
+
+                            shutil.rmtree(outdir, ignore_errors=True)
+                            parent_htdemucs = os.path.join(base_dir, 'htdemucs')
+                            if os.path.isdir(parent_htdemucs) and not os.listdir(parent_htdemucs):
+                                os.rmdir(parent_htdemucs)
+                    except Exception as e:
+                        bot.edit_message_text(f"✅ Demucs selesai, tapi cleanup gagal: {e}", chat_id=msg.chat.id, message_id=msg.message_id, parse_mode="Markdown")
+                        return
+
                 bot.edit_message_text(f"✅ *{task_name} Selesai!*\n📍 `{os.path.basename(filepath)}`", chat_id=msg.chat.id, message_id=msg.message_id, parse_mode="Markdown")
             else:
                 bot.edit_message_text(f"❌ *{task_name} Gagal!*", chat_id=msg.chat.id, message_id=msg.message_id, parse_mode="Markdown")
@@ -1045,40 +1256,42 @@ def cancel_delete_callback(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('SRCH_DL:'))
 def search_download_callback(call):
-    url = call.data.replace('SRCH_DL:', '', 1)
-    bot.answer_callback_query(call.id, "Memulai download...")
-    msg = bot.send_message(call.message.chat.id, f"⏳ <b>Sedang Mendownload Audio...</b>\n📍 <code>{url}</code>", parse_mode="HTML")
-    def _task():
-        try:
-            p = subprocess.Popen([get_zdt_bin(), "--download-audio", url], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
-            out, _ = p.communicate(timeout=300)
-            import html
-            bot.send_message(call.message.chat.id, f"✅ <b>Download selesai!</b>\n<pre>{html.escape(out[-500:])}</pre>", parse_mode="HTML")
-        except subprocess.TimeoutExpired:
-            p.kill()
-            p.wait()
-            bot.send_message(call.message.chat.id, f"⏱️ <b>Download timeout</b> (lebih dari 5 menit). Coba URL yang lebih pendek.", parse_mode="HTML")
-        except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ Gagal: {e}")
-    if not _safe_submit_task(_task):
-        try:
-            bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=call.message.chat.id, message_id=msg.message_id)
-        except Exception:
-            pass
+    idx_str = call.data.replace('SRCH_DL:', '', 1)
+    try:
+        idx = int(idx_str)
+    except ValueError:
+        bot.answer_callback_query(call.id, "Pilihan tidak valid")
+        return
+    with chat_history_lock:
+        results = chat_history.get(call.message.chat.id, {}).get("search_results", [])
+    url = None
+    for r in results:
+        if r.startswith(f"{idx})"):
+            url = r.split(")", 1)[1].strip()
+            break
+    if not url:
+        bot.answer_callback_query(call.id, "Sesi kadaluarsa, cari ulang.")
+        return
+    bot.answer_callback_query(call.id, "Pilih opsi download...")
+    start_dl_flow(call, url)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('SRCH_PAGE:'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('SRCH_PG:'))
 def search_page_callback(call):
     """Handler untuk pagination hasil pencarian"""
-    parts = call.data.split(':', 2)
-    if len(parts) < 3: return
-    _, query, page_str = parts
+    import html
+    page_str = call.data.replace('SRCH_PG:', '', 1)
     try:
         page = int(page_str)
     except ValueError:
         return
+    with chat_history_lock:
+        query = chat_history.get(call.message.chat.id, {}).get("search_query", "")
+    if not query:
+        bot.answer_callback_query(call.id, "Sesi kadaluarsa, cari ulang.")
+        return
     bot.answer_callback_query(call.id)
     try:
-        bot.edit_message_text(f"🔍 <b>Mencari di YouTube...</b>\nKata kunci: <code>{query}</code>", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML")
+        bot.edit_message_text(f"🔍 <b>Mencari di YouTube...</b>\nKata kunci: <code>{html.escape(query)}</code>", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML")
     except Exception as e:
         logging.warning(f"Failed to update search message: {e}")
     
@@ -1115,21 +1328,21 @@ def search_page_callback(call):
                 t = html.escape(title)
                 formatted.append(f"{idx}. <b>{t}</b>\n{url}")
                 urls.append(f"{idx}) {url}")
-                row_btns.append(InlineKeyboardButton(f"{idx}", callback_data=f"SRCH_DL:{url}"))
+                row_btns.append(InlineKeyboardButton(f"{idx}", callback_data=f"SRCH_DL:{idx}"))
             markup.row(*row_btns)
             nav = []
             if page > 0:
-                nav.append(InlineKeyboardButton("⬅️ Sebelumnya", callback_data=f"SRCH_PAGE:{query}:{page - 1}"))
+                nav.append(InlineKeyboardButton("⬅️ Sebelumnya", callback_data=f"SRCH_PG:{page - 1}"))
             if page + 1 < total_pages:
-                nav.append(InlineKeyboardButton(f"➡️ Selanjutnya ({page+2}/{total_pages})", callback_data=f"SRCH_PAGE:{query}:{page + 1}"))
+                nav.append(InlineKeyboardButton(f"➡️ Selanjutnya ({page+2}/{total_pages})", callback_data=f"SRCH_PG:{page + 1}"))
             if nav:
                 markup.row(*nav)
             with chat_history_lock:
                 if chat_history.get(call.message.chat.id):
                     chat_history[call.message.chat.id]["search_results"] = urls
+                    chat_history[call.message.chat.id]["search_query"] = query
 
             out_text = "\n\n".join(formatted)
-            out_text += "\n\n👇 Pilih nomor di bawah ini"
             try:
                 bot.edit_message_text(f"🎯 <b>Hasil Pencarian:</b>\n\n{out_text}", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup, link_preview_options=telebot.types.LinkPreviewOptions(is_disabled=True))
             except Exception as e:

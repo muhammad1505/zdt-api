@@ -8,15 +8,14 @@ export interface Activity {
 }
 
 export function fmtTime(ts: string): string {
-  // Normalize SQLite datetime format (space-separated) to ISO 8601 for Safari compatibility
   const normalized = ts.replace(' ', 'T') + (ts.includes('Z') || ts.includes('+') ? '' : 'Z');
   const d = new Date(normalized);
   if (isNaN(d.getTime())) return ts;
   const now = new Date();
   const diff = now.getTime() - d.getTime();
-  if (diff < 60000) return 'just now';
-  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
-  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  if (diff < 60000) return 'baru saja';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm lalu';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'j lalu';
   return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
@@ -148,17 +147,17 @@ export const SOUND_PROFILES: Record<string, { freq: number; type: OscillatorType
 };
 
 export const NOTIF_FILTERS = [
-  { key: 'all', label: 'All', color: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300' },
-  { key: 'errors', label: '⚠ Errors', color: 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500' },
-  { key: 'downloads', label: '⬇ Downloads', color: 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400' },
-  { key: 'files', label: '📁 Files', color: 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' },
-  { key: 'settings', label: '⚙ Settings', color: 'bg-warning-50 dark:bg-warning-500/10 text-warning-600 dark:text-warning-500' },
-  { key: 'users', label: '👤 Users', color: 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400' },
-  { key: 'vpn', label: '🔒 VPN', color: 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400' },
-  { key: 'services', label: '⚡ Services', color: 'bg-warning-50 dark:bg-warning-500/10 text-warning-600 dark:text-warning-500' },
-  { key: 'tools', label: '🛠 Tools', color: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300' },
-  { key: 'keys', label: '🔑 Keys', color: 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400' },
-  { key: 'auth', label: '🔐 Auth', color: 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' },
+  { key: 'all', label: 'All', color: 'badge badge-ghost' },
+  { key: 'errors', label: '⚠ Errors', color: 'badge badge-error' },
+  { key: 'downloads', label: '⬇ Downloads', color: 'badge badge-primary' },
+  { key: 'files', label: '📁 Files', color: 'badge badge-success' },
+  { key: 'settings', label: '⚙ Settings', color: 'badge badge-warning' },
+  { key: 'users', label: '👤 Users', color: 'badge badge-primary' },
+  { key: 'vpn', label: '🔒 VPN', color: 'badge badge-primary' },
+  { key: 'services', label: '⚡ Services', color: 'badge badge-warning' },
+  { key: 'tools', label: '🛠 Tools', color: 'badge badge-ghost' },
+  { key: 'keys', label: '🔑 Keys', color: 'badge badge-primary' },
+  { key: 'auth', label: '🔐 Auth', color: 'badge badge-success' },
 ];
 
 export function playCategorySound(category: string): void {

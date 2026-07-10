@@ -120,17 +120,17 @@ export const executeTool = async (action: string, filename?: string, path?: stri
   const payload: Record<string, any> = { action };
   if (filename) payload.filename = filename;
   if (path) payload.path = path;
-  const res = await api.post('/api/tools', payload);
+  const res = await apiSilent.post('/api/tools', payload);
   return res.data;
 };
 
 export const restartApi = async () => {
-  const res = await api.post('/api/admin/system/restart');
+  const res = await apiSilent.post('/api/admin/system/restart');
   return res.data;
 };
 
 export const shutdownServer = async () => {
-  const res = await api.post('/api/admin/system/shutdown');
+  const res = await apiSilent.post('/api/admin/system/shutdown');
   return res.data;
 };
 

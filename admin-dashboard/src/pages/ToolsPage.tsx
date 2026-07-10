@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { executeTool } from '../api/client';
-import api from '../api/client';
+import { executeTool, apiSilent } from '../api/client';
 import { RefreshCw, Trash2, FileText, Music, Disc3, MicOff, Terminal, RotateCw } from 'lucide-react';
 import FileBrowser from '../components/FileBrowser';
 import Swal from 'sweetalert2';
@@ -20,7 +19,7 @@ const SYNC_TOOLS = new Set(['playlist']);
 const DONE_PATTERNS = ['done', 'selesai', 'deleted', 'created', 'playlist created'];
 
 function toast(icon: 'success' | 'error' | 'info', title: string) {
-  Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 4000, background: '#ffffff', color: '#1d2939', customClass: { container: '!z-[999999]' } });
+  Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 4000, background: 'var(--b1)', color: 'var(--bc)', customClass: { container: '!z-[999999]' } });
 }
 
 export default function ToolsPage() {
@@ -35,7 +34,7 @@ export default function ToolsPage() {
   const [confirm, setConfirm] = useState<{ action: string; label: string; desc: string; color: string } | null>(null);
   const [showBrowser, setShowBrowser] = useState<{ action: string; color: string } | null>(null);
 
-  const clearLog = async () => { try { await api.post('/api/logs/clear'); } catch {} };
+  const clearLog = async () => { try { await apiSilent.post('/api/logs/clear'); } catch {} };
 
   const checkDone = (action: string, logLines: string[], subprocRunning: boolean) => {
     if (notified.current) return;
@@ -49,7 +48,7 @@ export default function ToolsPage() {
 
   const fetchLogs = async () => {
     try {
-      const res = await api.get('/api/logs');
+      const res = await apiSilent.get('/api/logs');
       const lines: string[] = (res.data.logs || []).map((l: any) => l.line);
       const subRunning = !!res.data.running;
       setLogs(lines); setTaskRunning(subRunning);
@@ -81,6 +80,7 @@ export default function ToolsPage() {
       const firstFile = files && files.length > 0 ? files[0] : undefined;
       const data = await executeTool(action, firstFile, folder || undefined);
       if (!data.success) { toast('error', `${action}: ${data.error || 'Gagal'}`); setRunning(null); currentAction.current = null; notified.current = true; return; }
+      setRunning(null); currentAction.current = null;
       if (SYNC_TOOLS.has(action)) setTimeout(() => fetchLogs(), 500);
     } catch (e: any) { toast('error', `${action}: ${e.message}`); setRunning(null); currentAction.current = null; notified.current = true; }
   };
@@ -100,8 +100,8 @@ export default function ToolsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Server Tools</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Run maintenance and processing tools</p>
+        <h2 className="text-xl font-semibold text-base-content">Server Tools</h2>
+        <p className="text-sm text-base-content/60 mt-1">Run maintenance and processing tools</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
@@ -110,7 +110,7 @@ export default function ToolsPage() {
           return (
             <div
               key={tool.action}
-              className={`rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6 cursor-pointer transition-all duration-150 hover:shadow-theme-sm ${
+              className={`card bg-base-100 border border-base-200 p-5 md:p-6 cursor-pointer transition-all duration-150 hover:shadow-sm ${
                 running?.startsWith(tool.action) ? 'opacity-50 pointer-events-none' : ''
               }`}
               onClick={() => openTool(tool)}
@@ -118,9 +118,9 @@ export default function ToolsPage() {
               <div className="flex items-center justify-center w-12 h-12 rounded-xl mb-4" style={{ background: tool.color + '15' }}>
                 <Icon size={22} style={{ color: tool.color }} />
               </div>
-              <h3 className="text-base font-medium text-gray-800 dark:text-white/90 mb-1">{tool.label}</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{tool.desc}</p>
-              {running === tool.action && <div className="text-xs text-warning-600 dark:text-warning-500 mt-3 font-medium">Processing...</div>}
+              <h3 className="text-base font-medium text-base-content mb-1">{tool.label}</h3>
+              <p className="text-sm text-base-content/60 leading-relaxed">{tool.desc}</p>
+              {running === tool.action && <div className="text-xs text-warning mt-3 font-medium">Processing...</div>}
             </div>
           );
         })}
@@ -133,12 +133,14 @@ export default function ToolsPage() {
           onCancel={() => setShowBrowser(null)}
           multiFile={MULTI_FILE.has(showBrowser.action)}
           showFiles={needsFile(showBrowser.action)}
+          folderPicker={!needsFile(showBrowser.action)}
+          scope="system"
         />
       )}
 
       {confirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
-          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 w-[420px] max-w-[90%] shadow-theme-md">
+          <div className="card bg-base-100 border border-base-200 p-6 w-[420px] max-w-[90%] shadow-md">
             <div className="flex items-center gap-3 mb-3">
               <div className="p-2 rounded-lg" style={{ background: confirm.color + '20' }}>
                 {(() => {
@@ -146,12 +148,12 @@ export default function ToolsPage() {
                   return t ? <t.icon size={20} style={{ color: confirm.color }} /> : null;
                 })()}
               </div>
-              <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 m-0">{confirm.label}</h3>
+              <h3 className="text-base font-semibold text-base-content m-0">{confirm.label}</h3>
             </div>
-            <p className="text-sm text-gray-500 dark:text-gray-400 m-0 mb-4 leading-relaxed">{confirm.desc}</p>
+            <p className="text-sm text-base-content/60 m-0 mb-4 leading-relaxed">{confirm.desc}</p>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setConfirm(null)}
-                className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Batal</button>
+                className="btn btn-ghost btn-xs">Batal</button>
               <button onClick={() => runTool(confirm.action)}
                 className="px-4 py-2 rounded-lg border-none cursor-pointer text-white text-sm font-medium hover:brightness-110 transition-all"
                 style={{ background: confirm.color }}>Konfirmasi</button>
@@ -161,26 +163,26 @@ export default function ToolsPage() {
       )}
 
       {(running || logs.length > 0 || taskRunning) && (
-        <div className={`fixed bottom-5 right-5 z-[99999] w-[480px] max-h-80 rounded-2xl border overflow-hidden flex flex-col shadow-theme-lg ${
-          running ? 'border-warning-300 dark:border-warning-500/40' : 'border-gray-200 dark:border-gray-700'
-        } bg-white dark:bg-gray-900`}>
-          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 dark:border-gray-800 shrink-0">
-            <Terminal size={14} className={running ? 'text-warning-600 dark:text-warning-500' : 'text-gray-500 dark:text-gray-400'} />
-            <span className={`text-xs font-semibold flex-1 ${running ? 'text-warning-600 dark:text-warning-500' : 'text-gray-500 dark:text-gray-400'}`}>
+        <div className={`fixed bottom-5 right-5 z-[99999] w-[480px] max-h-80 rounded-2xl border overflow-hidden flex flex-col shadow-lg ${
+          running ? 'border-warning/40' : 'border-base-200'
+        } bg-base-100`}>
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-base-200 shrink-0">
+            <Terminal size={14} className={running ? 'text-warning' : 'text-base-content/60'} />
+            <span className={`text-xs font-semibold flex-1 ${running ? 'text-warning' : 'text-base-content/60'}`}>
               {running ? `Processing ${running}...` : 'Task Log'}
             </span>
             <button onClick={fetchLogs}
-              className="p-1 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700 cursor-pointer text-[10px] hover:text-gray-700 dark:hover:text-gray-300 transition-colors"><RotateCw size={11} /></button>
+              className="btn btn-ghost btn-xs"><RotateCw size={11} /></button>
           </div>
-          <div ref={logRef} className="flex-1 p-3 overflow-auto font-mono text-xs leading-relaxed bg-gray-50 dark:bg-gray-950" style={{ maxHeight: 240 }}>
+          <div ref={logRef} className="flex-1 p-3 overflow-auto font-mono text-xs leading-relaxed bg-base-200" style={{ maxHeight: 240 }}>
             {logs.length === 0 ? (
-              <span className="text-gray-500 dark:text-gray-400">No log entries yet.</span>
+              <span className="text-base-content/60">No log entries yet.</span>
             ) : logs.map((line, i) => (
               <div key={i} className={
-                line.includes('ERROR') || line.includes('Error') || line.includes('gagal') ? 'text-error-600 dark:text-error-500'
-                : line.includes('WARNING') ? 'text-warning-600 dark:text-warning-500'
-                : line.includes('INFO') ? 'text-brand-600 dark:text-brand-400'
-                : 'text-gray-800 dark:text-white/90'
+                line.includes('ERROR') || line.includes('Error') || line.includes('gagal') ? 'text-error'
+                : line.includes('WARNING') ? 'text-warning'
+                : line.includes('INFO') ? 'text-primary'
+                : 'text-base-content'
               }>{line}</div>
             ))}
           </div>

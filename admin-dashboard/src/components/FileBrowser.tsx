@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import api from '../api/client';
-import { Folder, File, ChevronRight, CheckSquare, Square } from 'lucide-react';
+import { apiSilent } from '../api/client';
+import { Folder, File, ChevronRight, CheckSquare, Square, FolderPlus, Pencil, Trash2 } from 'lucide-react';
 
 interface FileEntry {
   name: string; path: string; size: number; type: string; modified: number;
@@ -16,22 +16,26 @@ interface Props {
   multiFile?: boolean;
   showFiles?: boolean;
   folderPicker?: boolean;
+  scope?: 'media' | 'system';
 }
 
-export default function FileBrowser({ onSelect, onCancel, title, multiFile, showFiles, folderPicker }: Props) {
+export default function FileBrowser({ onSelect, onCancel, title, multiFile, showFiles, folderPicker, scope }: Props) {
   const [currentDir, setCurrentDir] = useState('');
   const [folders, setFolders] = useState<FolderEntry[]>([]);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<string[]>([]);
+  const [hoverFolder, setHoverFolder] = useState<string | null>(null);
 
   const showFilesFlag = showFiles !== false;
 
   const fetchDir = async (dir: string) => {
     setLoading(true);
     try {
-      const res = await api.get('/api/files/browse', { params: { dir } });
+      const params: Record<string, string> = { dir };
+      if (scope === 'system') params.scope = 'system';
+      const res = await apiSilent.get('/api/files/browse', { params });
       setFolders(res.data.folders || []);
       setFiles(res.data.files || []);
       setCurrentDir(res.data.path || '');
@@ -72,85 +76,121 @@ export default function FileBrowser({ onSelect, onCancel, title, multiFile, show
     }
   };
 
-  const row = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #1A1A28', fontSize: 13, color: '#E0E0FF' };
+  const payload = (p: string) => scope === 'system' ? { path: p, scope } : { path: p };
 
-  const selectNone = folderPicker && !currentDir;
+  const newFolder = async () => {
+    const name = window.prompt('Nama folder baru:');
+    if (!name) return;
+    try {
+      const body: Record<string, string> = { name, scope: scope || 'media' };
+      if (scope === 'system' && currentDir) body.dir = currentDir;
+      await apiSilent.post('/api/files/mkdir', body);
+      fetchDir(currentDir);
+    } catch {}
+  };
+
+  const renameFolder = async (folder: FolderEntry) => {
+    const newName = window.prompt('Nama baru:', folder.name);
+    if (!newName || newName === folder.name) return;
+    try {
+      await apiSilent.post('/api/files/rename', { ...payload(folder.path), new_name: newName });
+      fetchDir(currentDir);
+    } catch {}
+  };
+
+  const deleteFolder = async (folder: FolderEntry) => {
+    if (!window.confirm(`Hapus folder "${folder.name}" beserta isinya?`)) return;
+    try {
+      await apiSilent.post('/api/files/delete', payload(folder.path));
+      fetchDir(currentDir);
+    } catch {}
+  };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: '#13131A', borderRadius: 12, border: '1px solid #2A2A3C', width: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #2A2A3C' }}>
-          <h3 style={{ color: '#E0E0FF', fontSize: 15, margin: '0 0 4px' }}>{title}</h3>
-          <div style={{ color: '#6B6B80', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span onClick={goBack} style={{ cursor: history.length ? 'pointer' : 'default', color: history.length ? '#00F0FF' : '#6B6B80' }}>root</span>
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[1000] animate-fadeIn">
+      <div className="card bg-base-100 border border-base-200 w-[520px] max-w-[95vw] max-h-[80vh] flex flex-col animate-scaleIn">
+        <div className="px-5 py-4 border-b border-base-200">
+          <div className="flex justify-between items-center mb-1">
+            <h3 className="text-base font-semibold text-base-content m-0">{title}</h3>
+            <button onClick={newFolder} title="Buat folder baru" className="btn btn-ghost btn-xs gap-1 text-primary font-bold">
+              <FolderPlus size={14} /> Baru
+            </button>
+          </div>
+          <div className="text-xs text-base-content/60 flex items-center gap-1">
+            <span onClick={goBack} className={history.length ? 'text-primary cursor-pointer' : 'text-base-content/60'}>root</span>
             {currentDir && <><ChevronRight size={12} /><span>{currentDir}</span></>}
           </div>
         </div>
 
-        <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
+        <div className="flex-1 overflow-auto p-2">
           {loading ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#6B6B80' }}>Loading...</div>
+            <div className="text-center py-10 text-sm text-base-content/60">Loading...</div>
           ) : (
             <>
               {history.length > 0 && (
-                <div style={row} onClick={goBack}>
-                  <ChevronRight size={14} color="#6B6B80" style={{ transform: 'rotate(180deg)' }} />
-                  <span style={{ color: '#6B6B80' }}>..</span>
+                <div className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b border-base-200 text-sm text-base-content hover:bg-base-200/50 transition-colors" onClick={goBack}>
+                  <ChevronRight size={14} className="text-base-content/60 -rotate-180" />
+                  <span className="text-base-content/60">..</span>
                 </div>
               )}
               {folders.map(f => (
-                <div key={f.path} style={row} onClick={() => enterFolder(f.path)}>
-                  <Folder size={16} color="#FCE205" />
-                  <span style={{ flex: 1 }}>{f.name}</span>
-                  {folderPicker && (
-                    <button onClick={e => { e.stopPropagation(); onSelect([], f.path); }} style={{
-                      padding: '3px 10px', borderRadius: 4, background: '#00F0FF', color: '#09090E',
-                      border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: 11
-                    }}>Pilih</button>
+                <div key={f.path} className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b border-base-200 text-sm text-base-content hover:bg-base-200/50 transition-colors" onClick={() => enterFolder(f.path)}
+                  onMouseEnter={() => setHoverFolder(f.path)} onMouseLeave={() => setHoverFolder(null)}>
+                  <Folder size={16} className="text-warning shrink-0" />
+                  <span className="flex-1 truncate">{f.name}</span>
+                  {hoverFolder === f.path && (
+                    <span className="flex gap-0.5">
+                      <button onClick={e => { e.stopPropagation(); renameFolder(f); }} className="btn btn-ghost btn-xs" title="Ganti nama">
+                        <Pencil size={13} className="text-base-content/60" />
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); deleteFolder(f); }} className="btn btn-ghost btn-xs" title="Hapus">
+                        <Trash2 size={13} className="text-error" />
+                      </button>
+                    </span>
                   )}
                 </div>
               ))}
               {showFilesFlag && files.map(f => (
-                <div key={f.path} style={selectedFiles.has(f.path) ? { ...row, background: '#1A1A28' } : row} onClick={() => multiFile ? toggleFile(f.path) : onSelect([f.path], currentDir)}>
+                <div key={f.path} className={selectedFiles.has(f.path) ? "flex items-center gap-2 px-3 py-2 cursor-pointer border-b border-base-200 text-sm text-base-content bg-base-200" : "flex items-center gap-2 px-3 py-2 cursor-pointer border-b border-base-200 text-sm text-base-content hover:bg-base-200/50 transition-colors"} onClick={() => multiFile ? toggleFile(f.path) : onSelect([f.path], currentDir)}>
                   {multiFile && (
                     <span onClick={e => { e.stopPropagation(); toggleFile(f.path); }}>
-                      {selectedFiles.has(f.path) ? <CheckSquare size={16} color="#00F0FF" /> : <Square size={16} color="#6B6B80" />}
+                      {selectedFiles.has(f.path) ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} className="text-base-content/60" />}
                     </span>
                   )}
-                  <File size={16} color="#6B6B80" />
-                  <span style={{ flex: 1 }}>{f.name}</span>
-                  <span style={{ color: '#6B6B80', fontSize: 11, marginLeft: 8 }}>{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                  <File size={16} className="text-base-content/60 shrink-0" />
+                  <span className="flex-1 truncate">{f.name}</span>
+                  <span className="text-[11px] text-base-content/60 ml-2 shrink-0">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
                 </div>
               ))}
               {files.length === 0 && folders.length === 0 && (
-                <div style={{ textAlign: 'center', padding: 40, color: '#6B6B80' }}>Folder kosong</div>
+                <div className="text-center py-10 text-sm text-base-content/60">Folder kosong</div>
               )}
             </>
           )}
         </div>
 
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #2A2A3C', display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: 8 }}>
+        <div className="px-4 py-3 border-t border-base-200 flex gap-2 justify-between items-center">
+          <div className="flex gap-2">
             {multiFile && files.length > 0 && (
-              <button onClick={selectAll} style={{ padding: '6px 14px', borderRadius: 6, background: '#1F1F2C', color: '#E0E0FF', border: '1px solid #2A2A3C', cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+              <button onClick={selectAll} className="btn btn-ghost btn-sm font-bold">
                 {selectedFiles.size === files.length ? 'Deselect All' : 'Select All'}
               </button>
             )}
             {!folderPicker && (
-              <button onClick={() => onSelect([], currentDir)} style={{ padding: '6px 14px', borderRadius: 6, background: '#00FF88', color: '#09090E', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+              <button onClick={() => onSelect([], currentDir)} className="btn btn-success btn-sm font-bold">
                 Proses Semua{currentDir ? ` (${currentDir})` : ''}
               </button>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={onCancel} style={{ padding: '6px 14px', borderRadius: 6, background: '#1F1F2C', color: '#E0E0FF', border: '1px solid #2A2A3C', cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>Batal</button>
-            {folderPicker && !selectNone && (
-              <button onClick={() => onSelect([], currentDir)} style={{ padding: '6px 14px', borderRadius: 6, background: '#00F0FF', color: '#09090E', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+          <div className="flex gap-2">
+            <button onClick={onCancel} className="btn btn-ghost btn-sm font-bold">Batal</button>
+            {folderPicker && !(folderPicker && !currentDir) && (
+              <button onClick={() => onSelect([], currentDir)} className="btn btn-primary btn-sm font-bold">
                 Pilih Folder Ini{currentDir ? ` (${currentDir})` : ''}
               </button>
             )}
             {multiFile && selectedFiles.size > 0 && (
-              <button onClick={() => onSelect(Array.from(selectedFiles), currentDir)} style={{ padding: '6px 14px', borderRadius: 6, background: '#00F0FF', color: '#09090E', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+              <button onClick={() => onSelect(Array.from(selectedFiles), currentDir)} className="btn btn-primary btn-sm font-bold">
                 Proses {selectedFiles.size} File
               </button>
             )}

@@ -7,9 +7,9 @@ import Swal from 'sweetalert2';
 type LogFilter = 'all' | 'errors' | 'success';
 
 const FILTERS: { key: LogFilter; label: string; color: string }[] = [
-  { key: 'all', label: 'All', color: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300' },
-  { key: 'errors', label: '⚠ Errors', color: 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500' },
-  { key: 'success', label: '✓ Success', color: 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' },
+  { key: 'all', label: 'All', color: 'badge badge-ghost' },
+  { key: 'errors', label: '⚠ Errors', color: 'badge badge-error' },
+  { key: 'success', label: '✓ Success', color: 'badge badge-success' },
 ];
 
 export default function LogsPage() {
@@ -121,12 +121,12 @@ export default function LogsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Activity Logs</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Track API requests and system activity</p>
+          <h2 className="text-xl font-semibold text-base-content">Activity Logs</h2>
+          <p className="text-sm text-base-content/60 mt-1">Track API requests and system activity</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={fetchLogs} disabled={loading}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer disabled:opacity-50">
+            className="btn btn-ghost gap-2">
             <RefreshCw size={16} /> Refresh
           </button>
           {!loading && logs.length > 0 && (
@@ -152,7 +152,7 @@ export default function LogsPage() {
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 text-sm hover:text-brand-500 dark:hover:text-brand-400 hover:border-brand-200 dark:hover:border-brand-700 transition-colors bg-transparent cursor-pointer"
+                className="btn btn-ghost btn-sm gap-1.5"
                 title="Export as CSV"
               >
                 <Download size={14} />
@@ -168,17 +168,17 @@ export default function LogsPage() {
                     confirmButtonColor: '#f04438',
                     cancelButtonColor: '#667085',
                     confirmButtonText: 'Clear',
-                    background: '#ffffff',
+                    background: 'var(--b1)',
                     color: '#1d2939',
                   });
                   if (!res.isConfirmed) return;
                   try {
                     await clearActivityLogs();
                     setLogs([]);
-                    Swal.fire({ icon: 'success', title: 'Logs cleared', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000, background: '#ffffff', color: '#1d2939' });
+                    Swal.fire({ icon: 'success', title: 'Logs cleared', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000, background: 'var(--b1)', color: 'var(--bc)' });
                   } catch {}
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 text-sm hover:text-error-500 dark:hover:text-error-400 hover:border-error-200 dark:hover:border-error-700 transition-colors bg-transparent cursor-pointer"
+                className="btn btn-ghost btn-sm gap-1.5"
                 title="Clear all activity logs"
               >
                 <Trash2 size={14} />
@@ -198,8 +198,8 @@ export default function LogsPage() {
               onClick={() => setFilter(f.key)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer border-none transition-all ${
                 filter === f.key
-                  ? f.color + ' ring-2 ring-offset-1 ring-offset-white dark:ring-offset-gray-900 ring-gray-300 dark:ring-gray-600'
-                  : 'text-gray-400 dark:text-gray-500 bg-transparent hover:text-gray-600 dark:hover:text-gray-400'
+                  ? f.color
+                  : 'btn btn-ghost btn-sm'
               }`}
             >
               {f.label}
@@ -212,94 +212,94 @@ export default function LogsPage() {
           ))}
           {/* Search input */}
           <div className="relative flex-1 min-w-[200px] max-w-xs ml-auto">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/60 pointer-events-none" />
             <input
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search endpoint, method, IP..."
-              className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-xs text-gray-800 dark:text-white/90 outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border"
+              className="input input-bordered w-full pl-8 pr-3 text-xs"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-none cursor-pointer p-0 text-xs"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-base-content/60 hover:text-base-content bg-transparent border-none cursor-pointer p-0 text-xs"
               >✕</button>
             )}
           </div>
           {/* Live indicator */}
-          <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
-            <span className={`w-1.5 h-1.5 rounded-full ${liveConnected ? 'bg-success-500 animate-pulse' : 'bg-error-500'}`} />
+          <div className="flex items-center gap-1.5 text-[10px] text-base-content/60">
+            <span className={`w-1.5 h-1.5 rounded-full ${liveConnected ? 'bg-success animate-pulse' : 'bg-error'}`} />
             {liveConnected ? 'Live' : 'Disconnected'}
-            <span className="text-gray-500">·</span>
+            <span className="text-base-content/60">·</span>
             <span>{totalLogs} total</span>
           </div>
         </div>
       )}
 
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] overflow-hidden">
+      <div className="card bg-base-100 border border-base-200 overflow-hidden">
         {loading ? (
           <div className="animate-pulse">
             {/* Skeleton header */}
-            <div className="flex gap-4 px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+            <div className="flex gap-4 px-4 py-3 border-b border-base-200/50 bg-base-200/50">
               {[120, 70, 200, 60, 120].map((w, i) => (
-                <div key={i} className="h-3 bg-gray-200 dark:bg-gray-700 rounded" style={{ width: w }} />
+                <div key={i} className="h-3 bg-base-300 rounded" style={{ width: w }} />
               ))}
             </div>
             {/* Skeleton rows */}
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="flex gap-4 px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-                <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded" style={{ width: 120 }} />
-                <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded" style={{ width: 70 }} />
-                <div className="h-3 flex-1 bg-gray-100 dark:bg-gray-800 rounded" />
-                <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded" style={{ width: 60 }} />
-                <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded" style={{ width: 120 }} />
+              <div key={i} className="flex gap-4 px-4 py-3 border-b border-base-200/50">
+                <div className="h-3 bg-base-200 rounded" style={{ width: 120 }} />
+                <div className="h-3 bg-base-200 rounded" style={{ width: 70 }} />
+                <div className="h-3 flex-1 bg-base-200 rounded" />
+                <div className="h-3 bg-base-200 rounded" style={{ width: 60 }} />
+                <div className="h-3 bg-base-200 rounded" style={{ width: 120 }} />
               </div>
             ))}
           </div>
         ) : filteredLogs.length === 0 ? (
-          <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">
+          <div className="text-center py-10 text-sm text-base-content/60">
             {searchQuery ? 'No results matching your search' : filter === 'errors' ? 'No errors found' : filter === 'success' ? 'No successful requests found' : 'No activity yet'}
           </div>
         ) : (
           <div className="overflow-x-auto" ref={logsContainerRef}>
-            <table className="w-full text-sm">
+            <table className="table w-full">
               <thead>
-                <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
-                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Method</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Endpoint</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">IP Address</th>
+                <tr className="bg-base-200/50">
+                  <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider">Time</th>
+                  <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider">Method</th>
+                  <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider">Endpoint</th>
+                  <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider text-right">Status</th>
+                  <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider">IP Address</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              <tbody>
                 {filteredLogs.map((log, i) => (
-                  <tr key={log.id || i} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-                    <td className="py-2.5 px-4 text-xs whitespace-nowrap">
-                      <span className="text-gray-500 dark:text-gray-400 font-mono">{fmtTime(log.created_at)}</span>
-                      <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-1.5 font-mono">{new Date(log.created_at).toLocaleTimeString()}</span>
+                  <tr key={log.id || i} className="hover:bg-base-200/50 transition-colors">
+                    <td className="text-xs whitespace-nowrap">
+                      <span className="text-base-content/60 font-mono">{fmtTime(log.created_at)}</span>
+                      <span className="text-[10px] text-base-content/60 ml-1.5 font-mono">{new Date(log.created_at + 'Z').toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
                     </td>
-                    <td className="py-2.5 px-4">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-mono font-medium ${
-                        log.status_code >= 400 ? 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500' : 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400'
+                    <td>
+                      <span className={`badge badge-sm font-mono ${
+                        log.status_code >= 400 ? 'badge-error' : 'badge-primary'
                       }`}>{log.method}</span>
                     </td>
-                    <td className="py-2.5 px-4 text-xs text-gray-800 dark:text-white/90 font-mono">{log.endpoint}</td>
-                    <td className={`py-2.5 px-4 text-right text-xs font-mono font-medium ${
-                      log.status_code >= 400 ? 'text-error-600 dark:text-error-500' : 'text-success-600 dark:text-success-500'
+                    <td className="text-xs text-base-content font-mono">{log.endpoint}</td>
+                    <td className={`text-right text-xs font-mono font-medium ${
+                      log.status_code >= 400 ? 'text-error' : 'text-success'
                     }`}>{log.status_code}</td>
-                    <td className="py-2.5 px-4 text-xs text-gray-400 dark:text-gray-500 font-mono">{log.ip_address || '-'}</td>
+                    <td className="text-xs text-base-content/60 font-mono">{log.ip_address || '-'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             {/* Load more button */}
             {filteredLogs.length >= 100 && (
-              <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800 text-center">
+              <div className="px-4 py-3 border-t border-base-200/50 text-center">
                 <button
                   onClick={loadMore}
                   disabled={loadingMore}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-transparent cursor-pointer disabled:opacity-50"
+                  className="btn btn-ghost gap-1.5 text-xs"
                 >
                   <ChevronDown size={14} />
                   {loadingMore ? 'Loading...' : `Load more (showing ${filteredLogs.length} of ${totalLogs})`}
@@ -313,7 +313,7 @@ export default function LogsPage() {
       {showScrollTop && (
         <button
           onClick={scrollToTop}
-          className="fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full bg-brand-500 text-white shadow-lg hover:bg-brand-600 transition-all duration-200 border-none cursor-pointer flex items-center justify-center"
+          className="btn btn-primary btn-circle fixed bottom-6 right-6 z-50 shadow-lg"
           title="Go to top"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

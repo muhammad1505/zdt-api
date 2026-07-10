@@ -392,24 +392,8 @@
         })();
 
         // ============================================
-        // AUTO-UPDATE NOTIFICATION
+        // AUTO-UPDATE NOTIFICATION (removed)
         // ============================================
-
-        async function checkUpdate() {
-            try {
-                const res = await fetch('/api/update-check');
-                const data = await res.json();
-                if (data.has_update) {
-                    const badge = document.getElementById('updateBadge');
-                    badge.setAttribute('data-url', data.release_url || 'https://github.com/muhammad1505/zdt-music-toolkit/releases');
-                    badge.title = data.latest + ' tersedia! Klik untuk lihat rilis.';
-                    badge.style.display = 'inline-block';
-                    showToast(`✨ ${data.latest} tersedia! Klik banner untuk lihat changelog.`, 'info', 8000);
-                }
-            } catch(e) {}
-        }
-        setTimeout(checkUpdate, 5000);
-        setInterval(checkUpdate, 1800000);
 
         // TOAST NOTIFICATION LOGIC
         function showToast(message, type = 'info', duration = 4000) {

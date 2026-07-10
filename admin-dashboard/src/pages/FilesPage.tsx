@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Search, File as FileIcon, Disc3, Download, Play, Upload, RefreshCw, X, Pencil, Trash2,
-  FileText, Video, Music, Archive, ImageIcon, FileCode
+  FileText, Video, Music, Archive, ImageIcon, FileCode, Folder, ChevronRight, ArrowUp
 } from 'lucide-react';
 import api, { getStreamUrl, getDownloadUrl, uploadFile, renameFile, deleteFile } from '../api/client';
 import FileBrowser from '../components/FileBrowser';
@@ -20,23 +20,27 @@ const ARCHIVE_TYPES = new Set(['zip', 'rar', 'tar', 'gz', 'bz2', '7z', 'xz']);
 const IMAGE_TYPES = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']);
 
 function fileIcon(type: string) {
-  if (VIDEO_TYPES.has(type)) return <Video className="text-brand-500 size-4" />;
-  if (AUDIO_TYPES.has(type)) return <Music className="text-warning-500 size-4" />;
-  if (IMAGE_TYPES.has(type)) return <ImageIcon className="text-success-500 size-4" />;
-  if (DOC_TYPES.has(type)) return <FileText className="text-brand-500 size-4" />;
-  if (ARCHIVE_TYPES.has(type)) return <Archive className="text-gray-500 size-4" />;
-  if (['py', 'js', 'ts', 'sh', 'html', 'css'].includes(type)) return <FileCode className="text-brand-500 size-4" />;
-  return <FileIcon className="text-gray-500 size-4" />;
+  if (VIDEO_TYPES.has(type)) return <Video className="text-primary size-4" />;
+  if (AUDIO_TYPES.has(type)) return <Music className="text-primary size-4" />;
+  if (IMAGE_TYPES.has(type)) return <ImageIcon className="text-primary size-4" />;
+  if (DOC_TYPES.has(type)) return <FileText className="text-primary size-4" />;
+  if (ARCHIVE_TYPES.has(type)) return <Archive className="text-base-content/60 size-4" />;
+  if (['py', 'js', 'ts', 'sh', 'html', 'css'].includes(type)) return <FileCode className="text-primary size-4" />;
+  return <FileIcon className="text-base-content/60 size-4" />;
 }
 
 const toast = (icon: 'success' | 'error' | 'info', title: string) => {
-  Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, background: '#ffffff', color: '#1d2939', customClass: { container: '!z-[999999]' } });
+  Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, background: 'var(--b1)', color: 'var(--bc)', customClass: { container: '!z-[999999]' } });
 };
 
 export default function FilesPage() {
+  const [currentDir, setCurrentDir] = useState('');
+  const [folders, setFolders] = useState<any[]>([]);
   const [files, setFiles] = useState<any[]>([]);
+  const [history, setHistory] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState('all');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -49,18 +53,70 @@ export default function FilesPage() {
   const [editContent, setEditContent] = useState('');
   const ref = useRef<HTMLInputElement>(null);
 
-  const fetch = async () => {
+  const browseDir = async (dir: string) => {
     setLoading(true);
     try {
-      const res = await api.get('/api/files');
+      const res = await api.get('/api/files/browse', { params: { dir, scope: 'media' } });
+      setFolders(res.data.folders || []);
       setFiles(res.data.files || []);
-      setTargetDir(res.data.path || '');
+      setCurrentDir(res.data.path || '');
     } catch {}
     setLoading(false);
   };
-  useEffect(() => { fetch(); }, []);
 
-  const filtered = search ? files.filter(f => f.name.toLowerCase().includes(search.toLowerCase())) : files;
+  useEffect(() => { browseDir(''); }, []);
+
+  const fetchMeta = async () => {
+    try {
+      const res = await api.get('/api/settings');
+      setTargetDir(res.data.storage?.target_dir || '');
+    } catch {}
+  };
+  useEffect(() => { fetchMeta(); }, []);
+
+  const enterFolder = (path: string) => {
+    setHistory(prev => [...prev, currentDir]);
+    setSearch('');
+    setFilterType('all');
+    browseDir(path);
+  };
+
+  const goUp = () => {
+    if (history.length === 0) return;
+    const prev = history[history.length - 1];
+    setHistory(prev => prev.slice(0, -1));
+    setSearch('');
+    setFilterType('all');
+    browseDir(prev);
+  };
+
+  const goToBreadcrumb = (idx: number) => {
+    const parts = currentDir ? currentDir.split('/') : [];
+    const targetParts = parts.slice(0, idx + 1);
+    const target = targetParts.join('/');
+    const newHistory: string[] = [];
+    let acc = '';
+    for (const p of parts) {
+      if (acc === target) break;
+      newHistory.push(acc);
+      acc = acc ? acc + '/' + p : p;
+    }
+    setHistory(newHistory);
+    setSearch('');
+    setFilterType('all');
+    browseDir(target);
+  };
+
+  const filteredFiles = files.filter(f => {
+    if (search && !f.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (filterType !== 'all' && f.type !== filterType) return false;
+    return true;
+  });
+
+  const filteredFolders = folders.filter(f => {
+    if (search && !f.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -68,7 +124,7 @@ export default function FilesPage() {
     setUploading(true); setUploadProgress(0); setUploadError(null);
     try {
       await uploadFile(file, (pct) => setUploadProgress(pct));
-      setUploadProgress(100); fetch();
+      setUploadProgress(100); browseDir(currentDir);
       toast('success', `${file.name} uploaded`);
     } catch (err: any) {
       setUploadError(err.response?.data?.error || err.message || 'Upload gagal');
@@ -78,9 +134,18 @@ export default function FilesPage() {
     if (ref.current) ref.current.value = '';
   };
 
-  const handleDirSelected = (_files: string[], folder: string) => {
+  const handleDirSelected = async (_files: string[], folder: string) => {
     setShowDirPicker(false);
-    if (folder) { api.post('/api/settings/storage', { target_dir: folder }); setTargetDir(folder); }
+    if (folder) {
+      const absFolder = folder.startsWith('/') ? folder : '/' + folder;
+      try {
+        const res = await api.post('/api/settings/storage', { target_dir: absFolder });
+        setTargetDir(res.data.target_dir || absFolder);
+        setHistory([]);
+        browseDir('');
+        toast('success', 'Target directory diubah');
+      } catch { toast('error', 'Gagal ganti directory'); }
+    }
   };
 
   const handleRename = async () => {
@@ -88,17 +153,17 @@ export default function FilesPage() {
     try {
       await renameFile(renameTarget.path, renameValue.trim());
       toast('success', 'File renamed');
-      setRenameTarget(null); fetch();
+      setRenameTarget(null); browseDir(currentDir);
     } catch (err: any) { toast('error', err.response?.data?.error || 'Gagal rename'); }
   };
 
-  const handleDelete = async (f: any) => {
-    const res = await Swal.fire({ title: 'Delete this file?', text: f.name, icon: 'warning', showCancelButton: true, confirmButtonColor: '#f04438', cancelButtonColor: '#667085', confirmButtonText: 'Delete', background: '#ffffff', color: '#1d2939' });
+  const handleDelete = async (item: any) => {
+    const res = await Swal.fire({ title: 'Hapus?', text: item.name, icon: 'warning', showCancelButton: true, confirmButtonColor: 'var(--er)', cancelButtonColor: 'var(--b3)', confirmButtonText: 'Hapus', background: 'var(--b1)', color: 'var(--bc)' });
     if (!res.isConfirmed) return;
     try {
-      await deleteFile(f.path || f.name);
-      toast('success', 'File deleted');
-      fetch();
+      await deleteFile(item.path || item.name);
+      toast('success', 'Berhasil dihapus');
+      browseDir(currentDir);
     } catch (err: any) { toast('error', err.response?.data?.error || 'Gagal hapus'); }
   };
 
@@ -118,7 +183,7 @@ export default function FilesPage() {
       const file = new window.File([blob], editFile.name);
       await uploadFile(file, () => {});
       toast('success', 'File saved');
-      setEditFile(null); fetch();
+      setEditFile(null); browseDir(currentDir);
     } catch { toast('error', 'Failed to save'); }
   };
 
@@ -134,77 +199,195 @@ export default function FilesPage() {
     } else if (DOC_TYPES.has(ext)) {
       handleEditText(f);
     } else if (ARCHIVE_TYPES.has(ext)) {
-      Swal.fire({ title: 'Archive File', text: `${f.name} — this archive format cannot be previewed directly. Download it to extract locally.`, icon: 'info', confirmButtonText: 'OK', background: '#ffffff', color: '#1d2939' });
+      Swal.fire({ title: 'Archive File', text: `${f.name} — this archive format cannot be previewed directly. Download it to extract locally.`, icon: 'info', confirmButtonText: 'OK', background: 'var(--b1)', color: 'var(--bc)' });
     } else {
-      Swal.fire({ title: 'Unsupported', text: `Cannot preview ${f.type.toUpperCase()} files.`, icon: 'info', confirmButtonText: 'OK', background: '#ffffff', color: '#1d2939' });
+      Swal.fire({ title: 'Unsupported', text: `Cannot preview ${f.type.toUpperCase()} files.`, icon: 'info', confirmButtonText: 'OK', background: 'var(--b1)', color: 'var(--bc)' });
     }
   };
+
+  const breadcrumbParts = currentDir ? currentDir.split('/') : [];
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Files</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage uploaded files</p>
+        <h2 className="text-xl font-semibold text-base-content">Files</h2>
+        <p className="text-sm text-base-content/60 mt-1">Browse and manage files</p>
       </div>
 
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+      <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
         <div className="flex gap-3 mb-4 items-center flex-wrap">
-          <Search size={16} className="text-gray-500 dark:text-gray-400 shrink-0" />
-          <input placeholder="Search files..." value={search} onChange={e => setSearch(e.target.value)}
-            className="flex-1 max-w-[400px] px-3.5 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors" />
-          <span className="text-sm text-gray-500 dark:text-gray-400">{files.length} files</span>
+          <Search size={16} className="text-base-content/60 shrink-0" />
+          <input placeholder="Cari file atau folder..." value={search} onChange={e => setSearch(e.target.value)}
+            className="input input-bordered flex-1 max-w-[400px]" />
+          <select value={filterType} onChange={e => setFilterType(e.target.value)}
+            className="select select-bordered max-w-[130px]">
+            <option value="all">Semua</option>
+            <option value="mp3">Audio</option>
+            <option value="mp4">Video</option>
+            <option value="jpg">Gambar</option>
+            <option value="pdf">Dokumen</option>
+            <option value="zip">Arsip</option>
+          </select>
           <button onClick={() => ref.current?.click()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer">
+            className="btn btn-primary">
             <Upload size={16} /> Upload
           </button>
           <input ref={ref} type="file" hidden onChange={handleUpload} />
-          <button onClick={fetch} disabled={loading}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer disabled:opacity-50">
+          <button onClick={() => browseDir(currentDir)} disabled={loading}
+            className="btn btn-ghost">
             <RefreshCw size={14} /> Refresh
           </button>
         </div>
 
-        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 mb-4">
-          <Disc3 size={16} className="text-warning-500 shrink-0" />
-          <span className="flex-1 text-sm text-gray-800 dark:text-white/90 font-mono">{targetDir || 'Not set'}</span>
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-base-200 mb-4">
+          <Disc3 size={16} className="text-warning shrink-0" />
+          <span className="flex-1 text-sm text-base-content font-mono truncate">{targetDir || 'Not set'}</span>
           <button onClick={() => setShowDirPicker(true)}
-            className="px-3 py-1 rounded-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors cursor-pointer">Change</button>
+            className="btn btn-ghost btn-xs">Change</button>
         </div>
 
         {showDirPicker && (
-          <FileBrowser title="Pilih Target Directory" onSelect={handleDirSelected} onCancel={() => setShowDirPicker(false)} folderPicker />
+          <FileBrowser title="Pilih Target Directory" onSelect={handleDirSelected} onCancel={() => setShowDirPicker(false)} folderPicker scope="system" />
         )}
 
         {uploading && (
-          <div className="px-4 py-3 mb-3 rounded-lg border border-warning-200 dark:border-warning-500/20 bg-warning-50 dark:bg-warning-500/5">
+          <div className="px-4 py-3 mb-3 rounded-lg border border-warning/20 bg-warning/5">
             <div className="flex justify-between mb-2">
-              <span className="text-xs text-warning-600 dark:text-warning-500">Uploading... {uploadProgress}%</span>
+              <span className="text-xs text-warning">Uploading... {uploadProgress}%</span>
             </div>
-            <div className="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div className="h-full rounded-full bg-warning-500 transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+            <div className="w-full h-1.5 bg-base-300 rounded-full overflow-hidden">
+              <div className="h-full rounded-full bg-warning transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
             </div>
           </div>
         )}
         {uploadError && (
-          <div className="flex items-center gap-2 px-4 py-3 mb-3 rounded-lg border border-error-200 dark:border-error-500/20 bg-error-50 dark:bg-error-500/5 text-error-600 dark:text-error-500 text-xs cursor-pointer" onClick={() => setUploadError(null)}>
+          <div className="alert alert-error text-xs cursor-pointer" onClick={() => setUploadError(null)}>
             {uploadError} <X size={14} />
           </div>
         )}
       </div>
 
+      {/* Breadcrumb */}
+      {currentDir !== '' && (
+        <div className="flex items-center gap-1 text-sm text-base-content/60">
+          <button onClick={goUp} className="btn btn-ghost btn-xs gap-1">
+            <ArrowUp size={14} /> Naik
+          </button>
+          <span className="mx-1 text-base-content/30">|</span>
+          <button onClick={() => { setHistory([]); setSearch(''); setFilterType('all'); browseDir(''); }}
+            className="btn btn-ghost btn-xs">root</button>
+          {breadcrumbParts.map((part, idx) => (
+            <span key={idx} className="flex items-center gap-1">
+              <ChevronRight size={12} className="text-base-content/30" />
+              <button onClick={() => goToBreadcrumb(idx)}
+                className={`btn btn-ghost btn-xs ${idx === breadcrumbParts.length - 1 ? 'text-base-content font-semibold' : ''}`}>
+                {part}
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* File List */}
+      {loading ? (
+        <div className="text-center py-10 text-sm text-base-content/60">Loading...</div>
+      ) : filteredFolders.length === 0 && filteredFiles.length === 0 ? (
+        <div className="text-center py-10 text-sm text-base-content/60">{search ? 'Tidak ditemukan' : 'Kosong'}</div>
+      ) : (
+        <div className="card bg-base-100 border border-base-200 overflow-hidden">
+          <table className="table w-full">
+            <thead>
+              <tr className="bg-base-200/50">
+                <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider">Name</th>
+                <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider w-24">Size</th>
+                <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider w-20">Type</th>
+                <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider w-28">Date</th>
+                <th className="text-xs font-semibold text-base-content/60 uppercase tracking-wider w-36">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {currentDir !== '' && history.length > 0 && (
+                <tr className="hover:bg-base-200/30 transition-colors cursor-pointer" onClick={goUp}>
+                  <td colSpan={5} className="py-3">
+                    <div className="flex items-center gap-3 text-base-content/60">
+                      <ArrowUp size={16} />
+                      <span>..</span>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {filteredFolders.map(f => (
+                <tr key={f.path} className="hover:bg-base-200/30 transition-colors cursor-pointer" onClick={() => enterFolder(f.path)}>
+                  <td className="py-3">
+                    <div className="flex items-center gap-3">
+                      <Folder size={18} className="text-warning shrink-0" />
+                      <span className="text-sm text-base-content font-medium">{f.name}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 text-sm text-base-content/60">—</td>
+                  <td className="py-3"><span className="badge badge-sm">folder</span></td>
+                  <td className="py-3 text-xs text-base-content/60">—</td>
+                  <td className="py-3">
+                    <button onClick={e => { e.stopPropagation(); handleDelete(f); }}
+                      className="btn btn-ghost btn-xs text-error" title="Hapus folder">
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filteredFiles.map(f => (
+                <tr key={f.path} className="hover:bg-base-200/30 transition-colors cursor-pointer" onDoubleClick={() => handleOpen(f)}>
+                  <td className="py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 rounded-lg bg-base-200 shrink-0">
+                        {fileIcon(f.type)}
+                      </div>
+                      <span className="text-sm text-base-content font-medium truncate max-w-[400px]">{f.name}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 text-sm text-base-content/60">{fmtSize(f.size)}</td>
+                  <td className="py-3"><span className="badge badge-sm">{f.type.toUpperCase()}</span></td>
+                  <td className="py-3 text-xs text-base-content/60">{new Date(f.modified * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                  <td className="py-3">
+                    <div className="flex gap-1">
+                      <button onClick={() => handleOpen(f)}
+                        className="btn btn-ghost btn-xs text-primary" title="Open / Play">
+                        {VIDEO_TYPES.has(f.type) || AUDIO_TYPES.has(f.type) ? <Play size={14} /> : <FileText size={14} />}
+                      </button>
+                      <button onClick={() => { setRenameTarget({ path: f.path || f.name, name: f.name }); setRenameValue(f.name); }}
+                        className="btn btn-ghost btn-xs text-primary" title="Rename">
+                        <Pencil size={14} />
+                      </button>
+                      <a href={getDownloadUrl(f.path)} download
+                        className="btn btn-ghost btn-xs text-success" title="Download">
+                        <Download size={14} />
+                      </a>
+                      <button onClick={() => handleDelete(f)}
+                        className="btn btn-ghost btn-xs text-error" title="Delete">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* Rename Modal */}
       {renameTarget && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
-          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 w-[400px] max-w-[90%] shadow-theme-md">
-            <h3 className="text-base font-semibold text-gray-800 dark:text-white/90 mb-4">Rename File</h3>
+          <div className="card bg-base-100 border border-base-200 p-6 w-[400px] max-w-[90%] shadow-md">
+            <h3 className="text-base font-semibold text-base-content mb-4">Rename File</h3>
             <input value={renameValue} onChange={e => setRenameValue(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border mb-4"
+              className="input input-bordered w-full mb-4"
               onKeyDown={e => e.key === 'Enter' && handleRename()} autoFocus />
             <div className="flex gap-3 justify-end">
               <button onClick={() => setRenameTarget(null)}
-                className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Cancel</button>
+                className="btn btn-ghost">Cancel</button>
               <button onClick={handleRename}
-                className="px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer">Rename</button>
+                className="btn btn-primary">Rename</button>
             </div>
           </div>
         </div>
@@ -213,71 +396,28 @@ export default function FilesPage() {
       {/* Text Editor Modal */}
       {editFile && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
-          <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 w-[700px] max-w-[95vw] max-h-[90vh] shadow-theme-md flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800">
-              <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90 truncate">{editFile.name}</h3>
+          <div className="card bg-base-100 border border-base-200 w-[700px] max-w-[95vw] max-h-[90vh] shadow-md flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-base-200">
+              <h3 className="text-sm font-semibold text-base-content truncate">{editFile.name}</h3>
               <div className="flex gap-2">
                 <button onClick={handleSaveText}
-                  className="px-3 py-1.5 rounded-lg bg-brand-500 text-white text-xs font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer">Save</button>
+                  className="btn btn-primary">Save</button>
                 <button onClick={() => setEditFile(null)}
-                  className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-xs hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Cancel</button>
+                  className="btn btn-ghost">Cancel</button>
               </div>
             </div>
             <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
-              className="flex-1 p-4 bg-gray-50 dark:bg-gray-800 text-sm font-mono text-gray-800 dark:text-white/90 outline-none border-none resize-none min-h-[300px]"
+              className="flex-1 p-4 bg-base-200 text-sm font-mono text-base-content outline-none border-none resize-none min-h-[300px]"
               spellCheck={false} />
           </div>
         </div>
       )}
 
-      {/* File List */}
-      {loading ? (
-        <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">Loading...</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">{search ? 'No matches' : 'No files'}</div>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map(f => (
-            <div key={f.path} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-4 flex justify-between items-center gap-3">
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div className={`p-2 rounded-lg shrink-0 ${
-                  ARCHIVE_TYPES.has(f.type) ? 'bg-gray-100 dark:bg-gray-800' : 'bg-gray-100 dark:bg-gray-800'
-                }`}>
-                  {fileIcon(f.type)}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm text-gray-800 dark:text-white/90 truncate font-medium">{f.name}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{f.type.toUpperCase()} · {fmtSize(f.size)} · {new Date(f.modified * 1000).toLocaleDateString()}</div>
-                </div>
-              </div>
-              <div className="flex gap-1.5 shrink-0">
-                <button onClick={() => handleOpen(f)}
-                  className="p-2 rounded-md bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 border-none cursor-pointer hover:bg-brand-100 dark:hover:bg-brand-500/20 transition-colors" title="Open / Play">
-                  {VIDEO_TYPES.has(f.type) || AUDIO_TYPES.has(f.type) ? <Play size={14} /> : <FileText size={14} />}
-                </button>
-                <button onClick={() => { setRenameTarget({ path: f.path || f.name, name: f.name }); setRenameValue(f.name); }}
-                  className="p-2 rounded-md bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 border-none cursor-pointer hover:bg-brand-100 dark:hover:bg-brand-500/20 transition-colors" title="Rename">
-                  <Pencil size={14} />
-                </button>
-                <a href={getDownloadUrl(f.path)} download
-                  className="p-2 rounded-md bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500 border-none cursor-pointer no-underline inline-flex hover:bg-success-100 dark:hover:bg-success-500/20 transition-colors" title="Download">
-                  <Download size={14} />
-                </a>
-                <button onClick={() => handleDelete(f)}
-                  className="p-2 rounded-md bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500 border-none cursor-pointer hover:bg-error-100 dark:hover:bg-error-500/20 transition-colors" title="Delete">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* Media / Image Preview */}
       {preview && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[99999]" onClick={() => setPreview(null)}>
-          <div onClick={e => e.stopPropagation()} className="max-w-[90vw] max-h-[90vh] flex flex-col items-center">
-            <div className="text-white/80 text-xs mb-3">{preview.name}</div>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[99999] animate-fadeIn" onClick={() => setPreview(null)}>
+          <div onClick={e => e.stopPropagation()} className="max-w-[90vw] max-h-[90vh] flex flex-col items-center animate-scaleIn">
+            <div className="text-base-content/80 text-xs mb-3">{preview.name}</div>
             {VIDEO_TYPES.has(preview.type) ? (
               <video src={preview.url} controls autoPlay className="max-w-full max-h-[75vh] rounded-2xl" />
             ) : AUDIO_TYPES.has(preview.type) ? (
@@ -285,7 +425,7 @@ export default function FilesPage() {
             ) : (
               <img src={preview.url} alt={preview.name} className="max-w-full max-h-[75vh] rounded-2xl object-contain" />
             )}
-            <button onClick={() => setPreview(null)} className="mt-4 px-5 py-2 rounded-lg bg-gray-800 text-white text-sm hover:bg-gray-700 transition-colors border-none cursor-pointer">Close</button>
+            <button onClick={() => setPreview(null)} className="btn btn-ghost btn-sm mt-4">Close</button>
           </div>
         </div>
       )}

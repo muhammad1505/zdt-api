@@ -18,7 +18,6 @@ export default function LoginPage({ onLogin, error, loading }: Props) {
     if (expired) {
       sessionStorage.removeItem('zdt_session_expired');
       setSessionExpired(true);
-      // Auto-dismiss the banner after 8 seconds
       setTimeout(() => setSessionExpired(false), 8000);
     }
   }, []);
@@ -30,18 +29,18 @@ export default function LoginPage({ onLogin, error, loading }: Props) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 p-5">
-      <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-8 shadow-theme-md">
+    <div className="min-h-screen flex items-center justify-center bg-base-200 p-5">
+      <div className="card bg-base-100 border border-base-200 p-8 w-full max-w-sm shadow-md">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-xl bg-brand-500 flex items-center justify-center mx-auto mb-4">
+          <div className="w-14 h-14 rounded-xl bg-primary flex items-center justify-center mx-auto mb-4">
             <Server size={28} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white/90 m-0">ZDT Admin</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Server Management Dashboard</p>
+          <h1 className="text-2xl font-bold text-base-content m-0">ZDT Admin</h1>
+          <p className="text-sm text-base-content/60 mt-1">Server Management Dashboard</p>
         </div>
 
         {sessionExpired && (
-          <div className="mb-5 flex items-center gap-2.5 text-sm text-warning-600 dark:text-warning-500 bg-warning-50 dark:bg-warning-500/5 rounded-lg px-4 py-3 border border-warning-200 dark:border-warning-500/20">
+          <div className="alert alert-warning text-sm mb-5">
             <AlertTriangle size={18} className="shrink-0" />
             <span>Sesi telah berakhir. Silakan login ulang.</span>
           </div>
@@ -49,38 +48,38 @@ export default function LoginPage({ onLogin, error, loading }: Props) {
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Username</label>
+            <label className="text-sm text-base-content/80 mb-1.5 block">Username</label>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 focus:ring-3 focus:ring-brand-500/10 transition-colors box-border"
+              className="input input-bordered w-full"
             />
           </div>
 
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Password</label>
+            <label className="text-sm text-base-content/80 mb-1.5 block">Password</label>
             <div className="relative">
               <input
                 type={showPw ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 focus:ring-3 focus:ring-brand-500/10 transition-colors box-border pr-10"
+                className="input input-bordered w-full pr-10"
               />
               <button type="button" onClick={() => setShowPw(!showPw)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-none cursor-pointer text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-0">
+                className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-none cursor-pointer text-base-content/60 hover:text-base-content/80 transition-colors p-0">
                 {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>
 
           {error && (
-            <div className="mb-4 text-sm text-error-600 dark:text-error-500 text-center bg-error-50 dark:bg-error-500/5 rounded-lg px-3 py-2 border border-error-100 dark:border-error-500/20">
+            <div className="alert alert-error text-sm mb-4">
               {error}
             </div>
           )}
 
           <button type="submit" disabled={loading}
-            className="w-full py-2.5 rounded-lg bg-brand-500 text-white font-semibold text-sm border-none cursor-pointer transition-all hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn btn-primary btn-block"
           >
             {loading ? 'Loading...' : 'Sign In'}
           </button>

@@ -8,6 +8,7 @@ import importlib.util
 import signal
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from werkzeug.security import generate_password_hash
 
 from auth import requires_admin
@@ -166,6 +167,34 @@ def remove_user(user_id):
 
 # === SYSTEM ===
 
+# Cache for file count (refresh every 30s)
+_file_count_cache = {'count': 0, 'ts': 0}
+_FILE_COUNT_TTL = 30
+
+def _count_cached(target_dir):
+    global _file_count_cache
+    now = time.time()
+    if now - _file_count_cache['ts'] < _FILE_COUNT_TTL:
+        return _file_count_cache['count']
+    media_exts = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.mp4', '.mkv', '.webm'}
+    count = 0
+    try:
+        if os.path.exists(target_dir):
+            for root, _, files in os.walk(target_dir):
+                for f in files:
+                    if os.path.splitext(f)[1].lower() in media_exts:
+                        count += 1
+    except Exception:
+        pass
+    _file_count_cache = {'count': count, 'ts': now}
+    return count
+
+def _subproc(cmd, timeout=2):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except Exception:
+        return None
+
 @admin_bp.route('/api/admin/dashboard', methods=['GET'])
 @requires_admin
 def admin_dashboard():
@@ -203,56 +232,46 @@ def admin_dashboard():
         except Exception as e:
             logger.warning(f"Failed to read uptime: {e}")
         
+        # Parallel subprocess calls (timeout 2s each)
         net = {}
-        try:
-            result = subprocess.run(
-                ['ip', '-4', 'addr', 'show', 'ppp0'],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0:
-                for line in result.stdout.split('\n'):
+        services = {}
+        all_ips = []
+        svc_names = ['zdt-watch.py', 'zdt-telegram.py', 'zdt-scheduler.py']
+        
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            fut_vpn = pool.submit(_subproc, ['ip', '-4', 'addr', 'show', 'ppp0'])
+            fut_ips = pool.submit(_subproc, ['ip', '-4', 'addr', 'show'])
+            fut_services = {s: pool.submit(_subproc, ['pgrep', '-f', s]) for s in svc_names}
+            
+            for s, fut in fut_services.items():
+                r = fut.result()
+                services[s.replace('.py', '')] = r is not None and r.returncode == 0
+            
+            r = fut_vpn.result()
+            if r and r.returncode == 0:
+                for line in r.stdout.split('\n'):
                     if 'inet ' in line:
                         net['vpn_ip'] = line.strip().split()[1]
-        except Exception as e:
-            logger.warning(f"Failed to check vpn ip: {e}")
+            
+            r = fut_ips.result()
+            if r and r.returncode == 0:
+                for line in r.stdout.split('\n'):
+                    parts = line.strip().split()
+                    if 'inet' in parts:
+                        idx = parts.index('inet')
+                        ip = parts[idx + 1].split('/')[0]
+                        if ip != '127.0.0.1':
+                            all_ips.append(ip)
         
-        services = {}
-        for s in ['zdt-watch.py', 'zdt-telegram.py', 'zdt-scheduler.py']:
-            try:
-                r = subprocess.run(['pgrep', '-f', s], capture_output=True, timeout=3)
-                services[s.replace('.py', '')] = r.returncode == 0
-            except Exception as e:
-                logger.warning(f"Failed to check status for {s}: {e}")
-                services[s.replace('.py', '')] = False
-
-        media_exts = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.mp4', '.mkv', '.webm'}
-        file_count = 0
-        try:
-            if os.path.exists(target_dir):
-                for root, _, files in os.walk(target_dir):
-                    for f in files:
-                        if os.path.splitext(f)[1].lower() in media_exts:
-                            file_count += 1
-        except Exception:
-            pass
-
+        if not all_ips:
+            all_ips.append('N/A')
+        
+        file_count = _count_cached(target_dir)
+        
         import platform as _platform
         hostname = _platform.node()
         arch = _platform.machine()
         pyver = _platform.python_version()
-
-        all_ips = []
-        try:
-            r = subprocess.run(['ip', '-4', 'addr', 'show'], capture_output=True, text=True, timeout=5)
-            for line in r.stdout.split('\n'):
-                parts = line.strip().split()
-                if 'inet' in parts:
-                    idx = parts.index('inet')
-                    ip = parts[idx + 1].split('/')[0]
-                    if ip != '127.0.0.1':
-                        all_ips.append(ip)
-        except Exception:
-            all_ips.append('N/A')
         
         return jsonify({
             'cpu': {'load_1m': cpu[0], 'load_5m': cpu[1], 'load_15m': cpu[2]},
@@ -437,7 +456,7 @@ def activity_logs():
 @requires_admin
 def restart_api():
     try:
-        subprocess.Popen(['sudo', 'systemctl', 'restart', 'zdt-api', '--no-block'], start_new_session=True)
+        subprocess.Popen(['systemctl', 'restart', 'zdt-api', '--no-block'], start_new_session=True)
         return jsonify({'success': True, 'message': 'API server restart initiated (delayed)'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -523,29 +542,97 @@ def vpn_status():
         return jsonify({'error': str(e)}), 500
 
 
+L2TP_CONTROL = '/var/run/xl2tpd/l2tp-control'
+VPN_LAC = 'zdtvpn'
+
+def _vpn_write_l2tp(cmd: str) -> tuple[bool, str]:
+    """Write command to xl2tpd control socket. Falls back to sudo if direct write fails."""
+    if not os.path.exists(L2TP_CONTROL):
+        return False, f'Control socket {L2TP_CONTROL} not found'
+    # Try direct write
+    try:
+        with open(L2TP_CONTROL, 'w') as f:
+            f.write(f'{cmd} {VPN_LAC}\n')
+        return True, ''
+    except PermissionError:
+        pass
+    except OSError as e:
+        return False, str(e)
+    # Fallback: use sudo via shell script
+    script = '/usr/local/bin/zdt-vpn.sh'
+    action = {'c': 'connect', 'd': 'disconnect'}.get(cmd)
+    if action and os.path.exists(script):
+        try:
+            subprocess.run(['sudo', script, action], capture_output=True, timeout=15)
+            return True, ''
+        except Exception as e:
+            return False, str(e)
+    return False, 'Permission denied and no sudo fallback available'
+
+def _vpn_wait_ppp(timeout: int, expect_up: bool) -> bool:
+    """Wait for ppp0 to appear (expect_up=True) or disappear (expect_up=False)."""
+    import time
+    for _ in range(timeout):
+        time.sleep(1)
+        r = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
+                           capture_output=True, text=True, timeout=5)
+        up = r.returncode == 0
+        if up == expect_up:
+            return True
+    return False
+
+def _vpn_ensure_xl2tpd() -> tuple[bool, str]:
+    """Make sure xl2tpd service is running."""
+    try:
+        r = subprocess.run(['pgrep', '-x', 'xl2tpd'], capture_output=True, timeout=3)
+        if r.returncode == 0:
+            return True, ''
+    except Exception:
+        pass
+    # Try systemctl start (may fail with NoNewPrivs, but worth a shot)
+    try:
+        subprocess.run(['systemctl', 'start', 'xl2tpd'], capture_output=True, timeout=10)
+    except Exception:
+        pass
+    time.sleep(1)
+    try:
+        r = subprocess.run(['pgrep', '-x', 'xl2tpd'], capture_output=True, timeout=3)
+        if r.returncode == 0:
+            return True, ''
+    except Exception:
+        pass
+    return False, 'xl2tpd service not running and could not be started (try: sudo systemctl start xl2tpd)'
+
+
 @admin_bp.route('/api/admin/vpn/connect', methods=['POST'])
 @requires_admin
 def vpn_connect():
     try:
         import time
-        # Try restart first to handle stale sessions
-        restart = subprocess.run(
-            ['sudo', '/usr/local/bin/zdt-vpn.sh', 'restart'],
-            capture_output=True, text=True, timeout=15
-        )
-        if restart.returncode != 0:
-            # Fallback: direct connect
-            subprocess.run(
-                ['sudo', '/usr/local/bin/zdt-vpn.sh', 'connect'],
-                capture_output=True, text=True, timeout=15
-            )
-        for _ in range(15):
-            time.sleep(1)
-            ppp = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
-                                 capture_output=True, text=True, timeout=5)
-            if ppp.returncode == 0:
-                log_vpn_event('connect', 'success', 'VPN connected successfully')
-                return jsonify({'success': True, 'message': 'VPN connected'})
+        # If already connected, return success
+        r = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            return jsonify({'success': True, 'message': 'Already connected'})
+
+        ok, err = _vpn_ensure_xl2tpd()
+        if not ok:
+            log_vpn_event('connect', 'failed', err)
+            return jsonify({'error': err}), 500
+
+        # Disconnect first to clear stale session
+        _vpn_write_l2tp('d')
+        time.sleep(1)
+
+        ok, err = _vpn_write_l2tp('c')
+        if not ok:
+            log_vpn_event('connect', 'failed', err)
+            return jsonify({'error': err}), 500
+
+        if _vpn_wait_ppp(15, True):
+            log_vpn_event('connect', 'success', 'VPN connected')
+            return jsonify({'success': True, 'message': 'VPN connected'})
+
         log_vpn_event('connect', 'failed', 'ppp0 did not appear after 15s')
         return jsonify({'error': 'ppp0 interface did not appear after 15 seconds'}), 500
     except Exception as e:
@@ -557,21 +644,25 @@ def vpn_connect():
 @requires_admin
 def vpn_disconnect():
     try:
-        result = subprocess.run(
-            ['sudo', '/usr/local/bin/zdt-vpn.sh', 'disconnect'],
-            capture_output=True, text=True, timeout=15
-        )
-        if result.returncode != 0:
-            log_vpn_event('disconnect', 'failed', result.stderr.strip())
-            return jsonify({'error': 'Gagal disconnect VPN: ' + result.stderr.strip()}), 500
-        import time
-        for _ in range(10):
-            time.sleep(1)
-            ppp = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
-                                 capture_output=True, text=True, timeout=5)
-            if ppp.returncode != 0:
-                log_vpn_event('disconnect', 'success', 'VPN disconnected successfully')
-                return jsonify({'success': True, 'message': 'VPN disconnected'})
+        ok, err = _vpn_write_l2tp('d')
+        if not ok:
+            log_vpn_event('disconnect', 'failed', err)
+            return jsonify({'error': err}), 500
+
+        # Also kill pppd directly
+        subprocess.run(['pkill', '-x', 'pppd'], capture_output=True, timeout=3)
+        # Also try pppd pid file
+        try:
+            with open('/var/run/ppp0.pid') as pf:
+                pid = int(pf.read().strip())
+                os.kill(pid, 15)
+        except Exception:
+            pass
+
+        if _vpn_wait_ppp(10, False):
+            log_vpn_event('disconnect', 'success', 'VPN disconnected')
+            return jsonify({'success': True, 'message': 'VPN disconnected'})
+
         log_vpn_event('disconnect', 'failed', 'ppp0 still present after 10s')
         return jsonify({'error': 'ppp0 interface still present after 10 seconds'}), 500
     except Exception as e:
@@ -583,18 +674,27 @@ def vpn_disconnect():
 @requires_admin
 def vpn_restart():
     try:
-        result = subprocess.run(
-            ['sudo', '/usr/local/bin/zdt-vpn.sh', 'restart'],
-            capture_output=True, text=True, timeout=20
-        )
         import time
-        for _ in range(15):
-            time.sleep(1)
-            ppp = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
-                                 capture_output=True, text=True, timeout=5)
-            if ppp.returncode == 0:
-                log_vpn_event('restart', 'success', 'VPN restarted successfully')
-                return jsonify({'success': True, 'message': 'VPN restarted'})
+        ok, err = _vpn_write_l2tp('d')
+        if not ok:
+            logger.warning(f'VPN restart disconnect: {err}')
+        subprocess.run(['pkill', '-x', 'pppd'], capture_output=True, timeout=3)
+        time.sleep(2)
+
+        ok, err = _vpn_ensure_xl2tpd()
+        if not ok:
+            log_vpn_event('restart', 'failed', err)
+            return jsonify({'error': err}), 500
+
+        ok, err = _vpn_write_l2tp('c')
+        if not ok:
+            log_vpn_event('restart', 'failed', err)
+            return jsonify({'error': err}), 500
+
+        if _vpn_wait_ppp(15, True):
+            log_vpn_event('restart', 'success', 'VPN restarted')
+            return jsonify({'success': True, 'message': 'VPN restarted'})
+
         log_vpn_event('restart', 'failed', 'ppp0 did not appear after restart')
         return jsonify({'error': 'ppp0 did not appear after restart'}), 500
     except Exception as e:
@@ -676,34 +776,9 @@ def vpn_set_config():
 @admin_bp.route('/api/update-check', methods=['GET'])
 @requires_admin
 def check_update():
-    """Check GitHub for newer version (from zdt-web)."""
-    import urllib.request
+    """Placeholder — update check removed."""
     import json as _ju
-    try:
-        req = urllib.request.Request(
-            "https://api.github.com/repos/muhammad1505/zdt-music-toolkit/releases/latest",
-            headers={"User-Agent": f"ZDT-Enterprise/{config.get_version()}", "Accept": "application/vnd.github.v3+json"}
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = _ju.loads(resp.read())
-            latest_tag = data.get("tag_name", "")
-            ver = config.get_version()
-            current_version = "v" + ver
-            is_newer = False
-            if latest_tag and latest_tag != current_version:
-                try:
-                    curr = [int(x) for x in ver.split(".")]
-                    latest = [int(x) for x in latest_tag.lstrip("v").split(".")]
-                    while len(curr) < len(latest): curr.append(0)
-                    while len(latest) < len(curr): latest.append(0)
-                    is_newer = latest > curr
-                except ValueError:
-                    is_newer = latest_tag != current_version
-            body = data.get("body", "")[:500] if data.get("body") else ""
-            return _ju.dumps({"has_update": is_newer, "current": current_version, "latest": latest_tag,
-                              "release_url": data.get("html_url", ""), "release_body": body}), 200, {"Content-Type": "application/json"}
-    except Exception as e:
-        return _ju.dumps({"has_update": False, "error": str(e)}), 200, {"Content-Type": "application/json"}
+    return _ju.dumps({"has_update": False, "current": "v" + config.get_version(), "latest": ""}), 200, {"Content-Type": "application/json"}
 
 
 # === SERVICE MANAGEMENT ===
@@ -719,35 +794,33 @@ def list_services():
         services = []
         for name in ZDT_SERVICES:
             unit = name + '.service'
-            active_res = subprocess.run(['sudo', 'systemctl', 'is-active', unit],
+            active_res = subprocess.run(['systemctl', 'is-active', unit],
                                         capture_output=True, text=True, timeout=5)
-            enabled_res = subprocess.run(['sudo', 'systemctl', 'is-enabled', unit],
+            enabled_res = subprocess.run(['systemctl', 'is-enabled', unit],
                                          capture_output=True, text=True, timeout=5)
-            if active_res.returncode != 0 or enabled_res.returncode != 0:
-                scripts_map = {
-                    'zdt-watch': 'zdt-watch.py',
-                    'zdt-telegram': 'zdt-telegram.py',
-                    'zdt-scheduler': 'zdt-scheduler.py',
-                    'zdt-web': 'zdt-web.py',
-                    'zdt-api': 'server.py',
-                }
-                script = scripts_map.get(name, f'{name}.py')
-                pg = subprocess.run(['pgrep', '-f', script],
-                                    capture_output=True, text=True, timeout=3)
+            active = active_res.stdout.strip()
+            enabled = enabled_res.stdout.strip()
+            scripts_map = {
+                'zdt-watch': 'zdt-watch.py',
+                'zdt-telegram': 'zdt-telegram.py',
+                'zdt-scheduler': 'zdt-scheduler.py',
+                'zdt-web': 'zdt-web.py',
+                'zdt-api': 'server.py',
+            }
+            script = scripts_map.get(name, f'{name}.py')
+            pg = subprocess.run(['pgrep', '-f', script],
+                                capture_output=True, text=True, timeout=3)
+            if enabled not in ('enabled', 'disabled'):
                 enabled = 'unknown'
                 if name == 'zdt-watch':
                     enabled = 'enabled' if config.get('WATCH_AUTOSTART') == 'true' else 'disabled'
-                services.append({
-                    'name': name,
-                    'active': 'active' if pg.returncode == 0 else 'inactive',
-                    'enabled': enabled,
-                })
-            else:
-                services.append({
-                    'name': name,
-                    'active': active_res.stdout.strip(),
-                    'enabled': enabled_res.stdout.strip(),
-                })
+            if active != 'active':
+                active = 'active' if pg.returncode == 0 else 'inactive'
+            services.append({
+                'name': name,
+                'active': active or 'inactive',
+                'enabled': enabled,
+            })
         return jsonify({'services': services})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -789,6 +862,44 @@ def _kill_process(script_name):
     except Exception as e:
         logger.warning(f"Failed to kill process {script_name}: {e}")
 
+SCRIPTS_MAP = {
+    'zdt-watch': 'zdt-watch.py',
+    'zdt-telegram': 'zdt-telegram.py',
+    'zdt-scheduler': 'zdt-scheduler.py',
+    'zdt-web': 'zdt-web.py',
+    'zdt-api': 'server.py',
+}
+
+def _manage_direct(name, action):
+    """Manage a service directly by starting/stopping its Python script."""
+    script = SCRIPTS_MAP.get(name, f'{name}.py')
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    script_path = os.path.join(base, script)
+    python = shutil.which('python3') or 'python3'
+
+    if action == 'stop':
+        _kill_process(script)
+        return {'success': True, 'message': f'{name} stopped'}
+
+    if action == 'start':
+        if _is_process_running(script):
+            return {'success': True, 'message': f'{name} already running'}
+        if not os.path.exists(script_path):
+            return {'success': False, 'error': f'Script not found: {script_path}'}
+        subprocess.Popen([python, script_path], start_new_session=True, close_fds=True)
+        return {'success': True, 'message': f'{name} started'}
+
+    if action == 'restart':
+        _kill_process(script)
+        time.sleep(1)
+        if not os.path.exists(script_path):
+            return {'success': False, 'error': f'Script not found: {script_path}'}
+        subprocess.Popen([python, script_path], start_new_session=True, close_fds=True)
+        return {'success': True, 'message': f'{name} restarted'}
+
+    return {'success': False, 'error': 'Unknown action'}
+
+
 @admin_bp.route('/api/admin/services/<name>/<action>', methods=['POST'])
 @requires_admin
 def manage_service(name, action):
@@ -798,49 +909,29 @@ def manage_service(name, action):
         if action not in ('start', 'stop', 'restart', 'enable', 'disable'):
             return jsonify({'error': f'Invalid action: {action}'}), 400
 
+        # Handle start/stop/restart via direct process management
+        if action in ('start', 'stop', 'restart'):
+            result = _manage_direct(name, action)
+            if result['success']:
+                return jsonify(result)
+            return jsonify(result), 500
+
+        # Handle enable/disable: try systemctl first, fall back to config
         unit = name + '.service'
+        sys_result = subprocess.run(['systemctl', action, unit],
+                                    capture_output=True, text=True, timeout=15)
+        if sys_result.returncode == 0:
+            return jsonify({'success': True, 'message': f'{name} {action} berhasil'})
 
-        # Special handling for zdt-api restart (don't block)
-        if name == 'zdt-api' and action == 'restart':
-            subprocess.Popen(['sudo', 'systemctl', 'restart', unit, '--no-block'],
-                             start_new_session=True)
-            return jsonify({'success': True, 'message': f'{name} restart initiated (delayed)'})
+        # systemctl failed — fall back to config-based for known services
+        if name == 'zdt-watch':
+            config.update_config('WATCH_AUTOSTART', 'true' if action == 'enable' else 'false')
+            return jsonify({'success': True, 'message': f'{name} {action} (config)'})
+        if name == 'zdt-api':
+            config.update_config('API_AUTOSTART', 'true' if action == 'enable' else 'false')
+            return jsonify({'success': True, 'message': f'{name} {action} (config)'})
 
-        result = subprocess.run(['sudo', 'systemctl', action, unit],
-                                capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            if name == 'zdt-watch':
-                if action in ('start', 'stop', 'restart'):
-                    script = 'zdt-watch.py'
-                    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                    script_path = os.path.join(base, script)
-                    if action == 'restart':
-                        _kill_process(script)
-                        time.sleep(1)
-                    if action in ('start', 'restart'):
-                        if _is_process_running(script):
-                            return jsonify({'success': True, 'message': f'{name} already running'})
-                        if not os.path.exists(script_path):
-                            return jsonify({'error': f'Script not found: {script_path}'}), 404
-                        python = shutil.which('python3') or 'python3'
-                        subprocess.Popen([python, script_path], start_new_session=True, close_fds=True)
-                        msg = f'{name} started (daemon)'
-                    else:
-                        _kill_process(script)
-                        msg = f'{name} stopped (daemon)'
-                    return jsonify({'success': True, 'message': msg})
-                elif action == 'enable':
-                    config.update_config('WATCH_AUTOSTART', 'true')
-                    return jsonify({'success': True, 'message': 'Watch auto-start enabled (config)'})
-                elif action == 'disable':
-                    config.update_config('WATCH_AUTOSTART', 'false')
-                    return jsonify({'success': True, 'message': 'Watch auto-start disabled (config)'})
-                else:
-                    return jsonify({'error': f'Unknown action: {action}'}), 400
-            return jsonify({'error': result.stderr.strip() or f'Gagal {action} {name}'}), 500
-
-        msg = f'{name} {action} berhasil'
-        return jsonify({'success': True, 'message': msg})
+        return jsonify({'error': sys_result.stderr.strip() or f'Gagal {action} {name}'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

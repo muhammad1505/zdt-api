@@ -109,6 +109,36 @@ def create_app():
             # CSRF cookie present -> must validate
             csrf_header = request.headers.get('X-CSRF-Token')
             if not csrf_header or csrf_header != csrf_cookie:
+                # Before rejecting, check if the request has a valid non-cookie auth
+                # (Bearer token, API key, or Basic Auth). These are immune to CSRF
+                # and don't need cookie-to-header token validation.
+                auth_header = request.headers.get('Authorization', '')
+                if auth_header.startswith('Bearer '):
+                    from auth import verify_bearer_token
+                    if verify_bearer_token(auth_header[7:]):
+                        return None
+
+                api_key = request.headers.get('X-API-Key', '')
+                if api_key:
+                    from database import parse_smart_api_key, validate_api_key
+                    parsed = parse_smart_api_key(api_key)
+                    if parsed:
+                        if validate_api_key(parsed['key_id'], parsed['secret']):
+                            return None
+                    if '|' in api_key:
+                        parts = api_key.split('|')
+                        if len(parts) == 2:
+                            if validate_api_key(parts[0], parts[1]):
+                                return None
+
+                auth = request.authorization
+                if auth and auth.username and auth.password:
+                    from config import config as app_config
+                    web_user = app_config.get_web_user()
+                    web_pass = app_config.get_web_pass()
+                    if auth.username == web_user and auth.password == web_pass:
+                        return None
+
                 return jsonify({
                     'success': False,
                     'error': 'CSRF validation failed',
@@ -214,9 +244,9 @@ def create_app():
             return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'favicon.svg')
 
         @app.route('/')
-        @requires_auth
         def zdt_web_home():
             from flask import render_template
+            from auth import generate_bearer_token
             token = generate_bearer_token(0, app_config.get_web_user(), 'admin')
             return render_template('dashboard.html', auto_token=token)
 

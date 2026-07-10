@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, send_file, request
+from flask import Blueprint, jsonify, send_file, request, g
 import os
 import shutil
 import subprocess
@@ -109,10 +109,13 @@ def get_files():
             
         if not os.path.exists(scan_dir):
             return jsonify({'success': True, 'files': [], 'path': scan_dir})
-        
+
         files = []
+        MAX_FILES = 5000
         for root, _, filenames in os.walk(scan_dir):
             for f in sorted(filenames):
+                if len(files) >= MAX_FILES:
+                    break
                 rel_path = os.path.relpath(os.path.join(root, f), target_dir)
                 full_path = os.path.join(root, f)
                 ext = os.path.splitext(f)[1].lower()
@@ -123,6 +126,8 @@ def get_files():
                     'type': ext[1:] if ext else 'file',
                     'modified': os.path.getmtime(full_path)
                 })
+            if len(files) >= MAX_FILES:
+                break
         
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 50, type=int)
@@ -167,18 +172,41 @@ def get_files():
 @files_bp.route('/api/files/browse', methods=['GET'])
 @requires_auth
 def browse_files():
-    """Browse files and folders in a directory (flat, non-recursive)."""
+    """Browse files and folders in a directory (flat, non-recursive).
+
+    Query params:
+      dir    - subdirectory relative to base
+      scope  - 'media' (default, locked under target_dir) or 'system' (full /, admin only)
+    """
     try:
-        target_dir = config.get_target_dir()
+        scope = request.args.get('scope', 'media')
         req_dir = request.args.get('dir', '')
-        if req_dir:
-            scan_dir = os.path.join(target_dir, req_dir)
-            real_target = os.path.realpath(target_dir)
-            real_scan = os.path.realpath(scan_dir)
-            if os.path.commonpath([real_target, real_scan]) != real_target:
+
+        if scope == 'system':
+            user = g.get('user', {})
+            if not user or user.get('role') not in ('admin', 'superadmin'):
+                return jsonify({'success': False, 'error': 'Admin only'}), 403
+            full_scan = os.path.join('/', req_dir.lstrip('/')) if req_dir else '/'
+            real_scan = os.path.realpath(full_scan)
+            if os.path.commonpath([os.path.realpath('/'), real_scan]) != os.path.realpath('/'):
                 return jsonify({'success': False, 'error': 'Access denied'}), 403
+            scan_dir = real_scan
+            path_val = full_scan.rstrip('/') if full_scan != '/' else ''
+            parent_val = os.path.dirname(full_scan.rstrip('/')) if full_scan.rstrip('/') else None
+            if parent_val == os.path.sep:
+                parent_val = None
         else:
-            scan_dir = target_dir
+            target_dir = config.get_target_dir()
+            if req_dir:
+                scan_dir = os.path.join(target_dir, req_dir)
+                real_target = os.path.realpath(target_dir)
+                real_scan = os.path.realpath(scan_dir)
+                if os.path.commonpath([real_target, real_scan]) != real_target:
+                    return jsonify({'success': False, 'error': 'Access denied'}), 403
+            else:
+                scan_dir = target_dir
+            path_val = os.path.relpath(scan_dir, target_dir) if scan_dir != target_dir else ''
+            parent_val = os.path.relpath(os.path.dirname(scan_dir), target_dir) if scan_dir != target_dir else None
 
         if not os.path.exists(scan_dir):
             return jsonify({'success': True, 'files': [], 'folders': [], 'path': scan_dir})
@@ -188,14 +216,14 @@ def browse_files():
         files = []
         for entry in sorted(entries):
             full = os.path.join(scan_dir, entry)
-            rel = os.path.relpath(full, target_dir)
+            entry_rel = os.path.join(path_val, entry) if path_val else entry
             if os.path.isdir(full):
-                folders.append({'name': entry, 'path': rel})
+                folders.append({'name': entry, 'path': entry_rel})
             elif os.path.isfile(full):
                 ext = os.path.splitext(entry)[1].lower()
                 files.append({
                     'name': entry,
-                    'path': rel,
+                    'path': entry_rel,
                     'size': os.path.getsize(full),
                     'type': ext[1:],
                     'modified': os.path.getmtime(full),
@@ -205,8 +233,8 @@ def browse_files():
             'success': True,
             'files': files,
             'folders': folders,
-            'path': os.path.relpath(scan_dir, target_dir) if scan_dir != target_dir else '',
-            'parent': os.path.relpath(os.path.dirname(scan_dir), target_dir) if scan_dir != target_dir else None,
+            'path': path_val,
+            'parent': parent_val,
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -215,102 +243,132 @@ def browse_files():
 @files_bp.route('/api/files/mkdir', methods=['POST'])
 @requires_auth
 def create_directory():
-    """Create a subdirectory."""
+    """Create a subdirectory. Accepts scope (media|system) and dir (current dir context)."""
     try:
         data = request.get_json()
         if not data or 'name' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Bad request',
-                'message': 'Name is required'
-            }), 400
+            return jsonify({'success': False, 'error': 'Name required'}), 400
 
+        scope = data.get('scope', 'media')
         name = data['name'].strip()
         if not name:
-            return jsonify({
-                'success': False,
-                'error': 'Bad request',
-                'message': 'Name cannot be empty'
-            }), 400
+            return jsonify({'success': False, 'error': 'Name cannot be empty'}), 400
 
-        target_dir = config.get_target_dir()
-        full_path = os.path.join(target_dir, name)
-        real_target = os.path.realpath(target_dir)
-        real_path = os.path.realpath(full_path)
-        if os.path.commonpath([real_target, real_path]) != real_target:
-            return jsonify({
-                'success': False,
-                'error': 'Access denied',
-                'message': 'Access denied'
-            }), 403
+        if scope == 'system':
+            user = g.get('user', {})
+            if not user or user.get('role') not in ('admin', 'superadmin'):
+                return jsonify({'success': False, 'error': 'Admin only'}), 403
+            current_dir = data.get('dir', '').strip('/')
+            full_path = os.path.join('/', current_dir, name) if current_dir else os.path.join('/', name)
+            real_path = os.path.realpath(full_path)
+            if os.path.commonpath([os.path.realpath('/'), real_path]) != os.path.realpath('/'):
+                return jsonify({'success': False, 'error': 'Access denied'}), 403
+        else:
+            target_dir = config.get_target_dir()
+            full_path = os.path.join(target_dir, name)
+            real_target = os.path.realpath(target_dir)
+            real_path = os.path.realpath(full_path)
+            if os.path.commonpath([real_target, real_path]) != real_target:
+                return jsonify({'success': False, 'error': 'Access denied'}), 403
 
         os.makedirs(full_path, exist_ok=True)
         return jsonify({'success': True, 'message': 'Directory created'}), 201
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': 'Internal server error',
-            'message': str(e)
-        }), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @files_bp.route('/api/files/rename', methods=['POST'])
 @requires_auth
 def rename_file():
-    """Rename a file or directory."""
+    """Rename a file or directory. Accepts scope (media|system)."""
     try:
         data = request.get_json()
         if not data or 'path' not in data or 'new_name' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Bad request',
-                'message': 'Path and new_name are required'
-            }), 400
+            return jsonify({'success': False, 'error': 'Path and new_name required'}), 400
 
-        target_dir = config.get_target_dir()
+        scope = data.get('scope', 'media')
+        path = data.get('path', '').strip()
+        new_name = data.get('new_name', '').strip()
+        if not path or not new_name:
+            return jsonify({'success': False, 'error': 'Path and new_name required'}), 400
 
-        source_full = os.path.join(target_dir, data['path'])
-        real_target = os.path.realpath(target_dir)
-        real_source = os.path.realpath(source_full)
-        if os.path.commonpath([real_target, real_source]) != real_target:
-            return jsonify({
-                'success': False,
-                'error': 'Access denied',
-                'message': 'Access denied'
-            }), 403
+        if scope == 'system':
+            user = g.get('user', {})
+            if not user or user.get('role') not in ('admin', 'superadmin'):
+                return jsonify({'success': False, 'error': 'Admin only'}), 403
+            source_full = os.path.join('/', path.lstrip('/'))
+            real_source = os.path.realpath(source_full)
+            if os.path.commonpath([os.path.realpath('/'), real_source]) != os.path.realpath('/'):
+                return jsonify({'success': False, 'error': 'Access denied'}), 403
+            parent_dir = os.path.dirname(real_source)
+            dest_full = os.path.join(parent_dir, new_name)
+            real_dest = os.path.realpath(dest_full)
+            if os.path.commonpath([os.path.realpath('/'), real_dest]) != os.path.realpath('/'):
+                return jsonify({'success': False, 'error': 'Access denied'}), 403
+        else:
+            target_dir = config.get_target_dir()
+            source_full = os.path.join(target_dir, path)
+            real_target = os.path.realpath(target_dir)
+            real_source = os.path.realpath(source_full)
+            if os.path.commonpath([real_target, real_source]) != real_target:
+                return jsonify({'success': False, 'error': 'Access denied'}), 403
+            parent_dir = os.path.dirname(real_source)
+            dest_full = os.path.join(parent_dir, new_name)
+            real_dest = os.path.realpath(dest_full)
+            if os.path.commonpath([real_target, real_dest]) != real_target:
+                return jsonify({'success': False, 'error': 'Access denied'}), 403
 
         if not os.path.exists(real_source):
-            return jsonify({
-                'success': False,
-                'error': 'File not found',
-                'message': 'File not found'
-            }), 404
-
-        dest_dir = os.path.dirname(real_source)
-        dest_full = os.path.join(dest_dir, data['new_name'])
-        real_dest = os.path.realpath(dest_full)
-        if os.path.commonpath([real_target, real_dest]) != real_target:
-            return jsonify({
-                'success': False,
-                'error': 'Access denied',
-                'message': 'Access denied'
-            }), 403
-
+            return jsonify({'success': False, 'error': 'Not found'}), 404
         if os.path.exists(real_dest):
-            return jsonify({
-                'success': False,
-                'error': 'Conflict',
-                'message': 'A file with that name already exists'
-            }), 409
+            return jsonify({'success': False, 'error': 'Already exists'}), 409
 
         os.rename(real_source, real_dest)
-        return jsonify({'success': True, 'message': 'Renamed successfully'})
+        return jsonify({'success': True, 'message': 'Renamed'})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': 'Internal server error',
-            'message': str(e)
-        }), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@files_bp.route('/api/files/delete', methods=['POST'])
+@requires_auth
+def delete_item():
+    """Delete a file or directory. Accepts scope (media|system)."""
+    try:
+        data = request.get_json()
+        if not data or 'path' not in data:
+            return jsonify({'success': False, 'error': 'Path required'}), 400
+
+        scope = data.get('scope', 'media')
+        path = data['path'].strip()
+        if not path:
+            return jsonify({'success': False, 'error': 'Path required'}), 400
+
+        if scope == 'system':
+            user = g.get('user', {})
+            if not user or user.get('role') not in ('admin', 'superadmin'):
+                return jsonify({'success': False, 'error': 'Admin only'}), 403
+            full_path = os.path.join('/', path.lstrip('/'))
+            real_path = os.path.realpath(full_path)
+            if os.path.commonpath([os.path.realpath('/'), real_path]) != os.path.realpath('/'):
+                return jsonify({'success': False, 'error': 'Access denied'}), 403
+        else:
+            target_dir = config.get_target_dir()
+            full_path = os.path.join(target_dir, path)
+            real_target = os.path.realpath(target_dir)
+            real_path = os.path.realpath(full_path)
+            if os.path.commonpath([real_target, real_path]) != real_target:
+                return jsonify({'success': False, 'error': 'Access denied'}), 403
+
+        if not os.path.exists(real_path):
+            return jsonify({'success': False, 'error': 'Not found'}), 404
+
+        if os.path.isdir(real_path):
+            shutil.rmtree(real_path)
+        else:
+            os.remove(real_path)
+        return jsonify({'success': True, 'message': 'Deleted'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @files_bp.route('/api/files/info/<path:filename>', methods=['GET'])

@@ -172,6 +172,8 @@ def log_request(response):
             api_key_id = g.api_key.get('key_id')
         if hasattr(g, 'user'):
             user_id = g.user.get('user_id')
+            if user_id == 0:
+                user_id = None
 
         log_activity(
             api_key_id=api_key_id,

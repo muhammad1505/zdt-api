@@ -21,17 +21,17 @@ import { CATEGORIES, SOUND_PROFILES, notifGroupIcon, notifGroupLabel, playCatego
 
 function SkeletonCard({ lines = 3 }: { lines?: number }) {
   return (
-    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6 animate-pulse">
+    <div className="card bg-base-100 border border-base-200 p-5 md:p-6 animate-pulse">
       <div className="flex items-center gap-2.5 mb-4">
-        <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded" />
-        <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded" />
+        <div className="w-5 h-5 bg-base-300 rounded" />
+        <div className="h-4 w-32 bg-base-300 rounded" />
       </div>
       {Array.from({ length: lines }).map((_, i) => (
-        <div key={i} className="h-3 bg-gray-200 dark:bg-gray-700 rounded mb-2.5" style={{ width: `${60 + Math.random() * 40}%` }} />
+        <div key={i} className="h-3 bg-base-300 rounded mb-2.5" style={{ width: `${60 + Math.random() * 40}%` }} />
       ))}
       <div className="flex gap-2 mt-4">
-        <div className="h-8 w-20 bg-gray-200 dark:bg-gray-700 rounded-lg" />
-        <div className="h-8 w-20 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+        <div className="h-8 w-20 bg-base-300 rounded-lg" />
+        <div className="h-8 w-20 bg-base-300 rounded-lg" />
       </div>
     </div>
   );
@@ -60,7 +60,7 @@ export default function SettingsPage() {
   const tab = searchParams.get('tab') || 'services';
 
   const toast = (icon: 'success' | 'error' | 'info', title: string) => {
-    Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, background: '#ffffff', color: '#1d2939', customClass: { container: '!z-[999999]' } });
+    Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 2500, background: 'var(--b1)', color: 'var(--bc)', customClass: { container: '!z-[999999]' } });
   };
 
   const setTab = (t: string) => setSearchParams({ tab: t });
@@ -68,17 +68,17 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Settings</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage server configuration</p>
+        <h2 className="text-xl font-semibold text-base-content">Settings</h2>
+        <p className="text-sm text-base-content/60 mt-1">Manage server configuration</p>
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-800">
+      <div className="flex gap-1 border-b border-base-200">
         {TABS.map(t => {
           const active = tab === t.key;
           return (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`flex items-center gap-1.5 px-4 py-2.5 border-none bg-transparent text-sm cursor-pointer transition-all border-b-2 ${
-                active ? 'text-brand-600 dark:text-brand-400 font-semibold border-brand-500' : 'text-gray-500 dark:text-gray-400 font-normal border-transparent hover:text-gray-700 dark:hover:text-gray-300'
+                active ? 'text-primary font-semibold border-primary' : 'text-base-content/60 font-normal border-transparent hover:text-base-content/80'
               }`}>
               <t.icon size={16} /> {t.label}
             </button>
@@ -131,7 +131,7 @@ function ServicesTab({ toast }: { toast: any }) {
   };
 
   const handleRestart = async () => {
-    const res = await Swal.fire({ title: 'Restart API Server?', text: 'Koneksi akan terputus sementara', icon: 'warning', showCancelButton: true, confirmButtonColor: '#f04438', cancelButtonColor: '#667085', confirmButtonText: 'Restart', background: '#ffffff', color: '#1d2939' });
+    const res = await Swal.fire({ title: 'Restart API Server?', text: 'Koneksi akan terputus sementara', icon: 'warning', showCancelButton: true, confirmButtonColor: 'var(--er)', cancelButtonColor: 'var(--b3)', confirmButtonText: 'Restart', background: 'var(--b1)', color: 'var(--bc)' });
     if (!res.isConfirmed) return;
     setActionLoading('restart-api');
     try { const d = await restartApi(); setServerStatus(d.message); toast('success', 'Restart initiated'); }
@@ -140,7 +140,7 @@ function ServicesTab({ toast }: { toast: any }) {
   };
 
   const handleShutdown = async () => {
-    const res = await Swal.fire({ title: 'Matikan Server?', text: 'Server akan dimatikan total!', icon: 'warning', showCancelButton: true, confirmButtonColor: '#f04438', cancelButtonColor: '#667085', confirmButtonText: 'Shutdown', background: '#ffffff', color: '#1d2939' });
+    const res = await Swal.fire({ title: 'Matikan Server?', text: 'Server akan dimatikan total!', icon: 'warning', showCancelButton: true, confirmButtonColor: 'var(--er)', cancelButtonColor: 'var(--b3)', confirmButtonText: 'Shutdown', background: 'var(--b1)', color: 'var(--bc)' });
     if (!res.isConfirmed) return;
     try { await shutdownServer(); toast('info', 'Shutdown initiated'); } catch (e: any) { toast('error', e.response?.data?.error || 'Gagal'); }
   };
@@ -155,20 +155,20 @@ function ServicesTab({ toast }: { toast: any }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+      <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
         <div className="flex items-center gap-2.5 mb-4">
-          <Activity className="text-brand-500" size={20} />
-          <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">API Server</h3>
+          <Activity className="text-primary" size={20} />
+          <h3 className="text-base font-medium text-base-content m-0">API Server</h3>
         </div>
         <div className="flex gap-3 flex-wrap">
           <button onClick={handleCheckStatus}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-transparent cursor-pointer"><RefreshCw size={14} /> Check Status</button>
+            className="btn btn-ghost"><RefreshCw size={14} /> Check Status</button>
           <button onClick={handleRestart} disabled={actionLoading === 'restart-api'}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-warning-600 dark:text-warning-500 text-sm font-medium hover:bg-warning-50 dark:hover:bg-warning-500/5 transition-colors bg-transparent cursor-pointer disabled:opacity-50"><RotateCw size={14} /> Restart</button>
+            className="btn btn-ghost text-warning"><RotateCw size={14} /> Restart</button>
           <button onClick={handleShutdown}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-error-600 dark:text-error-500 text-sm font-medium hover:bg-error-50 dark:hover:bg-error-500/5 transition-colors bg-transparent cursor-pointer"><Power size={14} /> Shutdown</button>
+            className="btn btn-ghost text-error"><Power size={14} /> Shutdown</button>
         </div>
-        {serverStatus && <div className="mt-3 text-sm p-3 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-white/90 border border-gray-100 dark:border-gray-700">{serverStatus}</div>}
+        {serverStatus && <div className="mt-3 text-sm p-3 rounded-lg bg-base-200 text-base-content">{serverStatus}</div>}
       </div>
 
       {loading ? (
@@ -180,38 +180,38 @@ function ServicesTab({ toast }: { toast: any }) {
       ) : (
         <>
           {services.map(svc => (
-        <div key={svc.name} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+        <div key={svc.name} className="card bg-base-100 border border-base-200 p-5 md:p-6">
           <div className="flex justify-between items-center mb-3">
             <div>
-              <div className="text-base font-medium text-gray-800 dark:text-white/90">{SERVICE_LABELS[svc.name] || svc.name}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-0.5">{svc.name}.service</div>
+              <div className="text-base font-medium text-base-content">{SERVICE_LABELS[svc.name] || svc.name}</div>
+              <div className="text-xs text-base-content/60 font-mono mt-0.5">{svc.name}.service</div>
             </div>
             <div className="flex gap-2">
-              <span className={`px-2.5 py-0.5 rounded text-xs font-medium ${isActive(svc.active) ? 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' : 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500'}`}>
+              <span className={`badge ${isActive(svc.active) ? 'badge-success' : 'badge-error'}`}>
                 {isActive(svc.active) ? 'Running' : 'Stopped'}
               </span>
-              <span className={`px-2.5 py-0.5 rounded text-xs font-medium ${isEnabled(svc.enabled) ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
+              <span className={`badge ${isEnabled(svc.enabled) ? 'badge-primary' : 'badge-ghost'}`}>
                 {isEnabled(svc.enabled) ? 'Auto' : 'Manual'}
               </span>
             </div>
           </div>
           <div className="flex gap-1.5 flex-wrap">
             <button onClick={() => handleAction(svc.name, isActive(svc.active) ? 'stop' : 'start')} disabled={actionLoading?.startsWith(svc.name)}
-              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs cursor-pointer border border-gray-200 dark:border-gray-700 bg-transparent disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
-                isActive(svc.active) ? 'text-error-600 dark:text-error-500' : 'text-success-600 dark:text-success-500'
+              className={`btn btn-ghost btn-xs ${
+                isActive(svc.active) ? 'text-error' : 'text-success'
               }`}>
               {isActive(svc.active) ? <Square size={12} /> : <Play size={12} />} {isActive(svc.active) ? 'Stop' : 'Start'}
             </button>
             <button onClick={() => handleAction(svc.name, 'restart')} disabled={actionLoading?.startsWith(svc.name)}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs cursor-pointer border border-gray-200 dark:border-gray-700 bg-transparent text-warning-600 dark:text-warning-500 disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"><RotateCw size={12} /> Restart</button>
+              className="btn btn-ghost btn-xs text-warning"><RotateCw size={12} /> Restart</button>
             <button onClick={() => handleAction(svc.name, isEnabled(svc.enabled) ? 'disable' : 'enable')} disabled={actionLoading?.startsWith(svc.name)}
-              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs cursor-pointer border border-gray-200 dark:border-gray-700 bg-transparent disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
-                isEnabled(svc.enabled) ? 'text-error-600 dark:text-error-500' : 'text-brand-600 dark:text-brand-400'
+              className={`btn btn-ghost btn-xs ${
+                isEnabled(svc.enabled) ? 'text-error' : 'text-primary'
               }`}>
               {isEnabled(svc.enabled) ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
               {isEnabled(svc.enabled) ? 'Disable' : 'Enable'}
             </button>
-            {actionLoading?.startsWith(svc.name) && <span className="text-xs text-warning-600 dark:text-warning-500 self-center">Processing...</span>}
+            {actionLoading?.startsWith(svc.name) && <span className="text-xs text-warning self-center">Processing...</span>}
           </div>
           </div>
         ))}
@@ -263,54 +263,52 @@ function VpnTab({ toast }: { toast: any }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-6">
+      <div className="card bg-base-100 border border-base-200 p-6">
         <div className="flex items-center gap-3 mb-5">
-          {status?.connected ? <Wifi className="text-success-500" size={28} /> : <WifiOff className="text-error-500" size={28} />}
+          {status?.connected ? <Wifi className="text-success" size={28} /> : <WifiOff className="text-error" size={28} />}
           <div>
-            <div className="text-lg font-semibold text-gray-800 dark:text-white/90">{status?.connected ? 'Connected' : 'Disconnected'}</div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">{status?.interface} {status?.ip && '· ' + status.ip}</div>
+            <div className="text-lg font-semibold text-base-content">{status?.connected ? 'Connected' : 'Disconnected'}</div>
+            <div className="text-sm text-base-content/60">{status?.interface} {status?.ip && '· ' + status.ip}</div>
           </div>
         </div>
         <div className="flex gap-4 mb-4">
           <div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Service</div>
-            <span className={`px-3 py-1 rounded text-xs font-medium ${status?.service_active ? 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' : 'bg-error-50 dark:bg-error-500/10 text-error-600 dark:text-error-500'}`}>
+            <div className="text-xs text-base-content/60 mb-1">Service</div>
+            <span className={`badge ${status?.service_active ? 'badge-success' : 'badge-error'}`}>
               {status?.service_active ? 'Active' : 'Inactive'}
             </span>
           </div>
           <div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Auto Start</div>
-            <span className={`px-3 py-1 rounded text-xs font-medium ${status?.service_enabled ? 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
+            <div className="text-xs text-base-content/60 mb-1">Auto Start</div>
+            <span className={`badge ${status?.service_enabled ? 'badge-success' : 'badge-ghost'}`}>
               {status?.service_enabled ? 'Enabled' : 'Disabled'}
             </span>
           </div>
         </div>
         <div className="flex gap-3">
           <button onClick={() => act(status?.connected ? 'disconnect' : 'connect', status?.connected ? vpnDisconnect : vpnConnect)} disabled={al !== null}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer border-none transition-all hover:brightness-110 disabled:opacity-50 ${
-              status?.connected ? 'bg-error-500 text-white' : 'bg-success-500 text-white'
-            }`}>
+            className={`btn ${status?.connected ? 'btn-error' : 'btn-success'}`}>
             {status?.connected ? <Square size={16} /> : <Play size={16} />}
             {status?.connected ? 'Disconnect' : 'Connect'}
           </button>
           <button onClick={() => act('refresh', fetch)} disabled={al !== null}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm cursor-pointer bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"><RefreshCw size={16} /> Refresh</button>
+            className="btn btn-ghost"><RefreshCw size={16} /> Refresh</button>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-6">
+      <div className="card bg-base-100 border border-base-200 p-6">
         <div className="flex items-center gap-2.5 mb-5">
-          <Settings className="text-warning-500" size={20} />
-          <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">VPN Config</h3>
+          <Settings className="text-warning" size={20} />
+          <h3 className="text-base font-medium text-base-content m-0">VPN Config</h3>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <div><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">SERVER</label><input value={s} onChange={e => setS(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" /></div>
-          <div><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">USERNAME</label><input value={u} onChange={e => setU(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" /></div>
-          <div><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">PASSWORD</label><input type="password" value={pw} onChange={e => setPw(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" placeholder="Kosongkan jika tidak diganti" /></div>
-          <div><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">AUTO START</label><select value={auto} onChange={e => setAuto(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
+          <div><label className="block text-sm text-base-content/60 mb-1">SERVER</label><input value={s} onChange={e => setS(e.target.value)} className="input input-bordered w-full" /></div>
+          <div><label className="block text-sm text-base-content/60 mb-1">USERNAME</label><input value={u} onChange={e => setU(e.target.value)} className="input input-bordered w-full" /></div>
+          <div><label className="block text-sm text-base-content/60 mb-1">PASSWORD</label><input type="password" value={pw} onChange={e => setPw(e.target.value)} className="input input-bordered w-full" placeholder="Kosongkan jika tidak diganti" /></div>
+          <div><label className="block text-sm text-base-content/60 mb-1">AUTO START</label><select value={auto} onChange={e => setAuto(e.target.value)} className="select select-bordered w-full"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
         </div>
         <button onClick={saveConfig} disabled={al !== null}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none mt-4 cursor-pointer disabled:opacity-50"><Save size={16} /> Save</button>
+          className="btn btn-primary mt-4"><Save size={16} /> Save</button>
       </div>
     </div>
   );
@@ -357,28 +355,26 @@ function TelegramTab({ toast }: { toast: any }) {
   );
 
   return (
-    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-6">
+    <div className="card bg-base-100 border border-base-200 p-6">
       <div className="flex items-center gap-2.5 mb-5">
-        <MessageCircle size={20} className="text-brand-500" />
-        <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">Telegram Bot</h3>
-        <span className={`ml-auto px-3 py-1 rounded text-xs font-medium ${enabled ? 'bg-success-50 dark:bg-success-500/10 text-success-600 dark:text-success-500' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
+        <MessageCircle size={20} className="text-primary" />
+        <h3 className="text-base font-medium text-base-content m-0">Telegram Bot</h3>
+        <span className={`badge ml-auto ${enabled ? 'badge-success' : 'badge-ghost'}`}>
           {enabled ? 'Enabled' : 'Disabled'}
         </span>
       </div>
-      <div className="mb-4"><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">BOT TOKEN</label><input value={botToken} onChange={e => setBotToken(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" placeholder="Kosongkan jika tidak diganti" type="password" /></div>
-      <div className="mb-4"><label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">CHAT ID</label><input value={chatId} onChange={e => setChatId(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" placeholder="Kosongkan jika tidak diganti" /></div>
+      <div className="mb-4"><label className="block text-sm text-base-content/60 mb-1">BOT TOKEN</label><input value={botToken} onChange={e => setBotToken(e.target.value)} className="input input-bordered w-full" placeholder="Kosongkan jika tidak diganti" type="password" /></div>
+      <div className="mb-4"><label className="block text-sm text-base-content/60 mb-1">CHAT ID</label><input value={chatId} onChange={e => setChatId(e.target.value)} className="input input-bordered w-full" placeholder="Kosongkan jika tidak diganti" /></div>
       <div className="mb-5 flex items-center gap-3">
-        <label className="text-sm text-gray-500 dark:text-gray-400">ENABLED</label>
+        <label className="text-sm text-base-content/60">ENABLED</label>
         <button onClick={() => setEnabled(!enabled)}
-          className={`px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer border-none transition-all ${
-            enabled ? 'bg-success-500 text-white' : 'bg-gray-300 dark:bg-gray-600 text-white'
-          }`}>{enabled ? 'ON' : 'OFF'}</button>
+          className={`btn btn-sm ${enabled ? 'btn-success' : 'btn-ghost'}`}>{enabled ? 'ON' : 'OFF'}</button>
       </div>
       <div className="flex gap-3">
         <button onClick={handleSave} disabled={saving}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer disabled:opacity-50"><Save size={16} /> {saving ? 'Saving...' : 'Save'}</button>
+          className="btn btn-primary"><Save size={16} /> {saving ? 'Saving...' : 'Save'}</button>
         <button onClick={handleTest} disabled={testing}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-transparent cursor-pointer disabled:opacity-50"><Send size={16} /> {testing ? 'Sending...' : 'Test'}</button>
+          className="btn btn-ghost"><Send size={16} /> {testing ? 'Sending...' : 'Test'}</button>
       </div>
     </div>
   );
@@ -416,23 +412,23 @@ function AiKeysTab({ toast }: { toast: any }) {
   );
 
   return (
-    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-6">
+    <div className="card bg-base-100 border border-base-200 p-6">
       <div className="flex items-center gap-2.5 mb-5">
-        <Key className="text-brand-500" size={20} />
-        <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">AI API Keys</h3>
+        <Key className="text-primary" size={20} />
+        <h3 className="text-base font-medium text-base-content m-0">AI API Keys</h3>
       </div>
       {Object.keys(AI_KEY_LABELS).map(name => (
         <div key={name} className="mb-4">
-          <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
+          <label className="block text-sm text-base-content/60 mb-1">
             {AI_KEY_LABELS[name]}
-            <a href={AI_KEY_HELP[name]} target="_blank" rel="noopener noreferrer" className="ml-2 text-brand-600 dark:text-brand-400 text-xs no-underline hover:underline">(get key)</a>
+            <a href={AI_KEY_HELP[name]} target="_blank" rel="noopener noreferrer" className="ml-2 text-primary text-xs no-underline hover:underline">(get key)</a>
           </label>
           <input type="password" value={keys[name] || ''} onChange={e => setKeys(prev => ({ ...prev, [name]: e.target.value }))}
-            className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border" placeholder="********" />
+            className="input input-bordered w-full" placeholder="********" />
         </div>
       ))}
       <button onClick={handleSave} disabled={saving}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer disabled:opacity-50"><Save size={16} /> {saving ? 'Saving...' : 'Save All'}</button>
+        className="btn btn-primary"><Save size={16} /> {saving ? 'Saving...' : 'Save All'}</button>
     </div>
   );
 }
@@ -520,48 +516,46 @@ function SchedulerTab({ toast }: { toast: any }) {
   return (
     <div className="space-y-4">
       {/* Scheduler Status */}
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+      <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
         <div className="flex items-center gap-3 mb-4">
-          <Clock className={status?.running ? 'text-success-500' : 'text-gray-400'} size={24} />
+          <Clock className={status?.running ? 'text-success' : 'text-base-content/60'} size={24} />
           <div>
-            <div className="text-base font-semibold text-gray-800 dark:text-white/90">
+            <div className="text-base font-semibold text-base-content">
               Scheduler {status?.running ? 'Running' : 'Stopped'}
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">
+            <div className="text-xs text-base-content/60">
               Menjalankan sinkronisasi playlist secara periodik
             </div>
           </div>
           <button onClick={toggleScheduler} disabled={loading}
-            className={`ml-auto inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer border-none transition-all hover:brightness-110 disabled:opacity-50 ${
-              status?.running ? 'bg-error-500 text-white' : 'bg-success-500 text-white'
-            }`}>
+            className={`ml-auto btn ${status?.running ? 'btn-error' : 'btn-success'}`}>
             {status?.running ? 'Stop' : 'Start'}
           </button>
         </div>
-        {loading && <div className="text-xs text-gray-400">Loading...</div>}
+        {loading && <div className="text-xs text-base-content/60">Loading...</div>}
       </div>
 
       {/* Add Playlist */}
       {status?.running && (
-        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90 mb-4 flex items-center gap-2">
-            <Plus size={16} className="text-brand-500" /> Add Scheduled Playlist
+        <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
+          <h3 className="text-sm font-semibold text-base-content mb-4 flex items-center gap-2">
+            <Plus size={16} className="text-primary" /> Add Scheduled Playlist
           </h3>
           <div className="flex gap-3 flex-wrap">
             <input value={newName} onChange={e => setNewName(e.target.value)}
-              className="flex-1 min-w-[120px] px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border"
+              className="flex-1 min-w-[120px] input input-bordered"
               placeholder="Nama playlist" />
             <input value={newUrl} onChange={e => setNewUrl(e.target.value)}
-              className="flex-[2] min-w-[200px] px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none focus:border-brand-300 dark:focus:border-brand-700 transition-colors box-border"
+              className="flex-[2] min-w-[200px] input input-bordered"
               placeholder="https://open.spotify.com/playlist/..." />
             <select value={newInterval} onChange={e => setNewInterval(e.target.value)}
-              className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-white/90 text-sm outline-none">
+              className="select select-bordered">
               {[6, 12, 24, 48, 72, 168].map(h => (
                 <option key={h} value={h}>{intervalLabels[h] || h + ' Jam'}</option>
               ))}
             </select>
             <button onClick={addPlaylist} disabled={saving || !newUrl.trim()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer disabled:opacity-50">
+              className="btn btn-primary">
               <Plus size={16} /> Add
             </button>
           </div>
@@ -569,38 +563,38 @@ function SchedulerTab({ toast }: { toast: any }) {
       )}
 
       {/* Playlist List */}
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
-          <Clock size={16} className="text-brand-500" />
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90 m-0">Scheduled Playlists</h3>
-          <span className="ml-auto text-xs text-gray-400">{playlists.length} active</span>
+      <div className="card bg-base-100 border border-base-200 overflow-hidden">
+        <div className="px-5 py-4 border-b border-base-200 flex items-center gap-2">
+          <Clock size={16} className="text-primary" />
+          <h3 className="text-sm font-semibold text-base-content m-0">Scheduled Playlists</h3>
+          <span className="ml-auto text-xs text-base-content/60">{playlists.length} active</span>
         </div>
         {playlists.length === 0 ? (
-          <div className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+          <div className="py-10 text-center text-sm text-base-content/60">
             {status?.running ? 'Belum ada playlist. Tambah playlist di atas.' : 'Start scheduler untuk mengelola playlist.'}
           </div>
         ) : (
-          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+          <div className="divide-y divide-base-200">
             {playlists.map((pl: any, i: number) => (
               <div key={i} className="flex items-center gap-3 px-5 py-3.5">
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-gray-800 dark:text-white/90 truncate">
+                  <div className="text-sm font-medium text-base-content truncate">
                     {pl.name || 'Untitled'}
                   </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                  <div className="text-xs text-base-content/60 truncate mt-0.5">
                     {pl.url}
                   </div>
                 </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                <span className="text-xs text-base-content/60 whitespace-nowrap">
                   {intervalLabels[pl.interval] || pl.interval + ' Jam'}
                 </span>
                 {pl.last_sync && (
-                  <span className="text-xs text-gray-400 whitespace-nowrap">
+                  <span className="text-xs text-base-content/60 whitespace-nowrap">
                     {new Date(pl.last_sync).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
                   </span>
                 )}
                 <button onClick={() => removePlaylist(i)}
-                  className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-400 hover:text-error-500 hover:border-error-300 transition-colors bg-transparent cursor-pointer">
+                  className="btn btn-ghost btn-xs">
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -642,10 +636,10 @@ function NotificationsTab({ toast }: { toast: any }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+      <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
         <div className="flex items-center gap-2.5 mb-5">
-          <Bell className="text-brand-500" size={20} />
-          <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">Notification Preferences</h3>
+          <Bell className="text-primary" size={20} />
+          <h3 className="text-base font-medium text-base-content m-0">Notification Preferences</h3>
         </div>
 
         <div className="flex flex-wrap gap-4 mb-6">
@@ -653,33 +647,33 @@ function NotificationsTab({ toast }: { toast: any }) {
             <button
               onClick={toggleSound}
               className={`w-10 h-6 rounded-full transition-colors relative border-none cursor-pointer ${
-                soundEnabled ? 'bg-brand-500' : 'bg-gray-300 dark:bg-gray-600'
+                soundEnabled ? 'bg-primary' : 'bg-base-300'
               }`}
             >
               <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
                 soundEnabled ? 'translate-x-4' : 'translate-x-0'
               }`} />
             </button>
-            <span className="text-sm text-gray-700 dark:text-gray-300">Sound Notifications</span>
+            <span className="text-sm text-base-content/80">Sound Notifications</span>
           </label>
           <label className="flex items-center gap-2.5 cursor-pointer select-none">
             <button
               onClick={toggleDesktop}
               className={`w-10 h-6 rounded-full transition-colors relative border-none cursor-pointer ${
-                desktopEnabled ? 'bg-brand-500' : 'bg-gray-300 dark:bg-gray-600'
+                desktopEnabled ? 'bg-primary' : 'bg-base-300'
               }`}
             >
               <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
                 desktopEnabled ? 'translate-x-4' : 'translate-x-0'
               }`} />
             </button>
-            <span className="text-sm text-gray-700 dark:text-gray-300">Desktop Notifications</span>
+            <span className="text-sm text-base-content/80">Desktop Notifications</span>
           </label>
         </div>
 
-        <div className="border-t border-gray-100 dark:border-gray-800 pt-4">
-          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Sound Preview</h4>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Click any category to hear its notification chime</p>
+        <div className="border-t border-base-200 pt-4">
+          <h4 className="text-sm font-medium text-base-content/80 mb-3">Sound Preview</h4>
+          <p className="text-xs text-base-content/60 mb-4">Click any category to hear its notification chime</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
             {cats.map(cat => (
               <button
@@ -690,11 +684,11 @@ function NotificationsTab({ toast }: { toast: any }) {
                   }
                 }}
                 disabled={!soundEnabled}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors bg-transparent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                className="btn btn-ghost btn-sm"
               >
                 <span className="text-sm">{notifGroupIcon(cat)}</span>
                 <span className="flex-1 text-left text-xs">{notifGroupLabel(cat)}</span>
-                <span className="text-[10px] text-gray-400 font-mono">{SOUND_PROFILES[cat]?.freq || ''}Hz</span>
+                <span className="text-[10px] text-base-content/60 font-mono">{SOUND_PROFILES[cat]?.freq || ''}Hz</span>
               </button>
             ))}
           </div>
@@ -723,55 +717,61 @@ function ConfigTab({ toast }: { toast: any }) {
 
   const handleDirSelected = (_files: string[], folder: string) => {
     setShowDirPicker(false);
-    if (folder) { updateStoragePath(folder); setTargetDir(folder); setCfg(prev => ({ ...prev, TARGET_DIR: folder })); toast('success', 'Target directory updated'); }
+    if (folder) {
+      const absFolder = folder.startsWith('/') ? folder : '/' + folder;
+      updateStoragePath(absFolder);
+      setTargetDir(absFolder);
+      setCfg(prev => ({ ...prev, TARGET_DIR: absFolder }));
+      toast('success', 'Target directory updated');
+    }
   };
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+      <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
         <div className="flex items-center gap-3 mb-4">
-          <Folder size={20} className="text-warning-500" />
-          <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">Target Directory</h3>
+          <Folder size={20} className="text-warning" />
+          <h3 className="text-base font-medium text-base-content m-0">Target Directory</h3>
         </div>
         <div className="flex items-center gap-3">
-          <code className="flex-1 text-sm text-gray-800 dark:text-white/90 font-mono px-3.5 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
+          <code className="flex-1 text-sm text-base-content font-mono px-3.5 py-2.5 rounded-lg bg-base-200">
             {targetDir || 'Not set'}
           </code>
           <button onClick={() => setShowDirPicker(true)}
-            className="px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-medium hover:bg-brand-600 transition-colors border-none cursor-pointer">Browse</button>
+            className="btn btn-primary">Browse</button>
         </div>
       </div>
 
       {showDirPicker && (
-        <FileBrowser title="Pilih Target Directory" onSelect={handleDirSelected} onCancel={() => setShowDirPicker(false)} folderPicker />
+        <FileBrowser title="Pilih Target Directory" onSelect={handleDirSelected} onCancel={() => setShowDirPicker(false)} folderPicker scope="system" />
       )}
 
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-white/[0.03] p-5 md:p-6">
+      <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
         <div className="flex items-center gap-2.5 mb-4">
-          <Settings className="text-brand-500" size={20} />
-          <h3 className="text-base font-medium text-gray-800 dark:text-white/90 m-0">All Config</h3>
+          <Settings className="text-primary" size={20} />
+          <h3 className="text-base font-medium text-base-content m-0">All Config</h3>
         </div>
         {Object.keys(cfg).length === 0 ? (
-          <div className="py-5 text-center text-sm text-gray-500 dark:text-gray-400">Belum ada konfigurasi.</div>
+          <div className="py-5 text-center text-sm text-base-content/60">Belum ada konfigurasi.</div>
         ) : (
-          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+          <div className="divide-y divide-base-200">
             {Object.entries(cfg).map(([key, value]) => (
               <div key={key} className="flex items-center py-3 gap-3">
-                <code className="text-sm text-brand-600 dark:text-brand-400 min-w-[200px] font-mono">{key}</code>
+                <code className="text-sm text-primary min-w-[200px] font-mono">{key}</code>
                 {editKey === key ? (
                   <>
                     <input value={editVal} onChange={e => setEditVal(e.target.value)}
-                      className="flex-1 px-2.5 py-1.5 rounded bg-gray-50 dark:bg-gray-800 border border-brand-300 dark:border-brand-700 text-gray-800 dark:text-white/90 text-sm outline-none box-border" />
+                      className="input input-bordered flex-1" />
                     <button onClick={() => handleSave(key)}
-                      className="p-1.5 rounded bg-brand-500 text-white border-none cursor-pointer hover:bg-brand-600 transition-colors"><Save size={14} /></button>
+                      className="btn btn-primary btn-sm"><Save size={14} /></button>
                     <button onClick={() => setEditKey(null)}
-                      className="px-3 py-1.5 rounded border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-xs hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Cancel</button>
+                      className="btn btn-ghost btn-xs">Cancel</button>
                   </>
                 ) : (
                   <>
-                    <span className="flex-1 text-sm text-gray-800 dark:text-white/90 font-mono">{value}</span>
+                    <span className="flex-1 text-sm text-base-content font-mono">{value}</span>
                     <button onClick={() => { setEditKey(key); setEditVal(value); }}
-                      className="px-2.5 py-1 rounded border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-xs hover:text-gray-700 dark:hover:text-gray-300 transition-colors bg-transparent cursor-pointer">Edit</button>
+                      className="btn btn-ghost btn-xs">Edit</button>
                   </>
                 )}
               </div>

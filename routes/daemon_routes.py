@@ -171,6 +171,11 @@ def server_tools():
         def resolve_path(relative: str) -> str:
             if not relative:
                 return target_dir
+            if os.path.isabs(relative):
+                real_full = os.path.realpath(relative)
+                if not os.path.exists(real_full):
+                    raise PermissionError(f'Path does not exist: {relative}')
+                return real_full
             full = os.path.join(target_dir, relative)
             real_target = os.path.realpath(target_dir)
             real_full = os.path.realpath(full)
@@ -467,15 +472,17 @@ def server_tools():
 
             def do_delete():
                 with open(log_path, 'a') as logf:
-                    exts = {'.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.mp4', '.mkv', '.webm'}
                     count = 0
                     try:
-                        for root, _, files in os.walk(work_dir):
-                            for f in files:
-                                if os.path.splitext(f)[1].lower() in exts:
-                                    os.remove(os.path.join(root, f))
-                                    count += 1
-                        logf.write(f'Deleted {count} media files\n')
+                        for entry in os.listdir(work_dir):
+                            full = os.path.join(work_dir, entry)
+                            if os.path.isfile(full) or os.path.islink(full):
+                                os.remove(full)
+                                count += 1
+                            elif os.path.isdir(full):
+                                shutil.rmtree(full)
+                                count += 1
+                        logf.write(f'Deleted {count} items\n')
                     except Exception as e:
                         logf.write(f'Delete error: {e}\n')
 
