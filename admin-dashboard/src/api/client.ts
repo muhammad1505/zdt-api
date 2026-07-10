@@ -31,6 +31,7 @@ api.interceptors.response.use(
       if (err.config?.url === '/api/login') {
         return Promise.reject(err);
       }
+      sessionStorage.setItem('zdt_session_expired', 'true');
       localStorage.removeItem('zdt_admin_token');
       localStorage.removeItem('zdt_admin_user');
       sessionStorage.setItem('zdt_redirect_path', window.location.pathname + window.location.search);

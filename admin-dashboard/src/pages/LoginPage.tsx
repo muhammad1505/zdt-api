@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Server, Eye, EyeOff } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Server, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 
 interface Props {
   onLogin: (username: string, password: string) => Promise<boolean>;
@@ -11,9 +11,21 @@ export default function LoginPage({ onLogin, error, loading }: Props) {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    const expired = sessionStorage.getItem('zdt_session_expired');
+    if (expired) {
+      sessionStorage.removeItem('zdt_session_expired');
+      setSessionExpired(true);
+      // Auto-dismiss the banner after 8 seconds
+      setTimeout(() => setSessionExpired(false), 8000);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSessionExpired(false);
     await onLogin(username, password);
   };
 
@@ -27,6 +39,13 @@ export default function LoginPage({ onLogin, error, loading }: Props) {
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white/90 m-0">ZDT Admin</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Server Management Dashboard</p>
         </div>
+
+        {sessionExpired && (
+          <div className="mb-5 flex items-center gap-2.5 text-sm text-warning-600 dark:text-warning-500 bg-warning-50 dark:bg-warning-500/5 rounded-lg px-4 py-3 border border-warning-200 dark:border-warning-500/20">
+            <AlertTriangle size={18} className="shrink-0" />
+            <span>Sesi telah berakhir. Silakan login ulang.</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">

@@ -105,7 +105,7 @@ function ServicesTab({ toast }: { toast: any }) {
 
   const fetch = async () => {
     setLoading(true);
-    try { const d = await getServices(); setServices(d.services || []); } catch {}
+    try { const d = await getServices(); setServices(d.services || []); } catch (e) { console.error('Failed to fetch services:', e); }
     setLoading(false);
   };
   useEffect(() => { fetch(); }, []);
@@ -232,7 +232,7 @@ function VpnTab({ toast }: { toast: any }) {
     try {
       const [st, c] = await Promise.all([getVpnStatus(), getVpnConfig()]);
       setStatus(st); setS(c.server); setU(c.username); setPw(''); setAuto(c.enabled);
-    } catch {}
+    } catch (e) { console.error('Failed to fetch VPN status:', e); }
     setLoading(false);
   };
   useEffect(() => { fetch(); }, []);
@@ -326,7 +326,7 @@ function TelegramTab({ toast }: { toast: any }) {
 
   const fetch = async () => {
     setLoading(true);
-    try { const d = await getTelegramConfig(); setBotToken(''); setChatId(''); setEnabled(d.enabled || false); } catch {}
+    try { const d = await getTelegramConfig(); setBotToken(''); setChatId(''); setEnabled(d.enabled || false); } catch (e) { console.error('Failed to fetch Telegram config:', e); }
     setLoading(false);
   };
   useEffect(() => { fetch(); }, []);
@@ -394,7 +394,7 @@ function AiKeysTab({ toast }: { toast: any }) {
 
   const fetch = async () => {
     setLoading(true);
-    try { const d = await getAiKeys(); setKeys(d.keys || {}); } catch {}
+    try { const d = await getAiKeys(); setKeys(d.keys || {}); } catch (e) { console.error('Failed to fetch AI keys:', e); }
     setLoading(false);
   };
   useEffect(() => { fetch(); }, []);
@@ -456,7 +456,7 @@ function SchedulerTab({ toast }: { toast: any }) {
       ]);
       setStatus(st);
       setPlaylists(pl.playlists || []);
-    } catch {}
+    } catch (e) { console.error('Failed to fetch scheduler:', e); }
     setLoading(false);
   };
   useEffect(() => { fetchAll(); }, []);
@@ -626,7 +626,7 @@ function NotificationsTab({ toast }: { toast: any }) {
     localStorage.setItem('zdt_notif_sound', String(v));
     saveNotifSettings({ sound: v }).then(() => {
       toast('success', v ? 'Sound enabled' : 'Sound disabled');
-    }).catch(() => {});
+    }).catch((e) => { console.error('Failed to save sound settings:', e); });
   };
 
   const toggleDesktop = () => {
@@ -635,7 +635,7 @@ function NotificationsTab({ toast }: { toast: any }) {
     localStorage.setItem('zdt_notif_desktop', String(v));
     saveNotifSettings({ desktop: v }).then(() => {
       toast('success', v ? 'Desktop notifications enabled' : 'Desktop notifications disabled');
-    }).catch(() => {});
+    }).catch((e) => { console.error('Failed to save desktop settings:', e); });
   };
 
   const cats = CATEGORIES.filter(c => c !== 'other');
@@ -713,7 +713,7 @@ function ConfigTab({ toast }: { toast: any }) {
   const [targetDir, setTargetDir] = useState('');
 
   useEffect(() => {
-    getConfig().then(d => { setCfg(d.config); if (d.config?.TARGET_DIR) setTargetDir(d.config.TARGET_DIR); }).catch(() => {});
+    getConfig().then(d => { setCfg(d.config); if (d.config?.TARGET_DIR) setTargetDir(d.config.TARGET_DIR); }).catch((e) => { console.error('Failed to fetch config:', e); });
   }, []);
 
   const handleSave = async (key: string) => {
