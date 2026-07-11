@@ -1139,7 +1139,7 @@ def post_download_callback(call):
         bot.send_message(chat_id, f"⏳ <b>Sync Lirik</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
         def _sync():
             try:
-                res = subprocess.run([get_zdt_bin(), "--sync-lirik", filepath], capture_output=True, text=True, timeout=120)
+                res = subprocess.run([get_zdt_bin(), "--sync-lirik-all"], capture_output=True, text=True, timeout=120)
                 bot.send_message(chat_id, f"{'✅' if res.returncode == 0 else '❌'} <b>Sync Lirik {'berhasil' if res.returncode == 0 else 'gagal'}</b>\n<pre>{res.stdout[-500:] if res.stdout else res.stderr[-500:]}</pre>", parse_mode="HTML")
             except Exception as e:
                 bot.send_message(chat_id, f"❌ Error: {e}")
@@ -1150,7 +1150,10 @@ def post_download_callback(call):
         bot.send_message(chat_id, f"⏳ <b>Pisah Vokal (Demucs)</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
         def _demucs():
             try:
-                res = subprocess.run([get_zdt_bin(), "--demucs", filepath], capture_output=True, text=True, timeout=600)
+                env = os.environ.copy()
+                env['AUTO_HAPUS_VOKAL_PATH'] = filepath
+                env['AUTO_HAPUS_VOKAL_MODE'] = '1'
+                res = subprocess.run([get_zdt_bin(), "--extract-vocal-all"], capture_output=True, text=True, timeout=600, env=env)
                 bot.send_message(chat_id, f"{'✅' if res.returncode == 0 else '❌'} <b>Pisah Vokal {'berhasil' if res.returncode == 0 else 'gagal'}</b>\n<pre>{res.stdout[-500:] if res.stdout else res.stderr[-500:]}</pre>", parse_mode="HTML")
             except Exception as e:
                 bot.send_message(chat_id, f"❌ Error: {e}")
