@@ -1155,8 +1155,21 @@ def post_download_callback(call):
         bot.send_message(chat_id, f"⏳ <b>Sync Lirik</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
         def _sync():
             try:
-                res = subprocess.run([get_zdt_bin(), "--sync-lirik-all"], capture_output=True, text=True, timeout=120)
-                bot.send_message(chat_id, f"{'✅' if res.returncode == 0 else '❌'} <b>Sync Lirik {'berhasil' if res.returncode == 0 else 'gagal'}</b>\n<pre>{res.stdout[-500:] if res.stdout else res.stderr[-500:]}</pre>", parse_mode="HTML")
+                import syncedlyrics
+                filename_noext = os.path.splitext(os.path.basename(filepath))[0]
+                lrc_path = os.path.splitext(filepath)[0] + '.lrc'
+                query = re.sub(r'\s*\([^)]*\)\s*', '', filename_noext)
+                query = re.sub(r'\s*\[[^]]*\]\s*', '', query)
+                query = re.sub(r'\s*-\s*', ' ', query).strip()
+                lrc = syncedlyrics.search(query, allow_plain_format=True)
+                if lrc:
+                    with open(lrc_path, 'w', encoding='utf-8') as f:
+                        f.write(lrc)
+                    bot.send_message(chat_id, f"✅ <b>Sync Lirik berhasil</b>\n📄 <code>{os.path.basename(lrc_path)}</code>", parse_mode="HTML")
+                else:
+                    bot.send_message(chat_id, f"❌ <b>Sync Lirik gagal</b> - Lirik tidak ditemukan untuk: {query}", parse_mode="HTML")
+            except ImportError:
+                bot.send_message(chat_id, "❌ Module syncedlyrics tidak terinstall.")
             except Exception as e:
                 bot.send_message(chat_id, f"❌ Error: {e}")
         if not _safe_submit_task(_sync):
@@ -1166,11 +1179,20 @@ def post_download_callback(call):
         bot.send_message(chat_id, f"⏳ <b>Pisah Vokal (Demucs)</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
         def _demucs():
             try:
-                env = os.environ.copy()
-                env['AUTO_HAPUS_VOKAL_PATH'] = filepath
-                env['AUTO_HAPUS_VOKAL_MODE'] = '1'
-                res = subprocess.run([get_zdt_bin(), "--extract-vocal-all"], capture_output=True, text=True, timeout=600, env=env)
-                bot.send_message(chat_id, f"{'✅' if res.returncode == 0 else '❌'} <b>Pisah Vokal {'berhasil' if res.returncode == 0 else 'gagal'}</b>\n<pre>{res.stdout[-500:] if res.stdout else res.stderr[-500:]}</pre>", parse_mode="HTML")
+                demucs_bin = ZdtPaths.get_demucs_bin()
+                if not os.path.exists(demucs_bin):
+                    demucs_bin = shutil.which("demucs")
+                if not demucs_bin:
+                    bot.send_message(chat_id, "❌ Demucs AI belum terinstal.")
+                    return
+                target_dir = os.path.dirname(filepath)
+                cmd_args = [demucs_bin, "--two-stems=vocals", "-o", target_dir, filepath]
+                process = subprocess.run(cmd_args, capture_output=True, text=True, timeout=600)
+                if process.returncode == 0:
+                    name_no_ext = os.path.splitext(os.path.basename(filepath))[0]
+                    bot.send_message(chat_id, f"✅ <b>Pisah Vokal berhasil</b>\n📍 <code>{name_no_ext}_vocals / _novokal</code>", parse_mode="HTML")
+                else:
+                    bot.send_message(chat_id, f"❌ <b>Pisah Vokal gagal</b>\n<pre>{process.stderr[-500:]}</pre>", parse_mode="HTML")
             except Exception as e:
                 bot.send_message(chat_id, f"❌ Error: {e}")
         if not _safe_submit_task(_demucs):
