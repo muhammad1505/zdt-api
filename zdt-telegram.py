@@ -1152,7 +1152,7 @@ def post_download_callback(call):
         return
     if call.data == 'cmd_sync':
         bot.answer_callback_query(call.id, "Sync lirik...")
-        bot.send_message(chat_id, f"⏳ <b>Sync Lirik</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
+        msg = bot.send_message(chat_id, f"⏳ <b>Sync Lirik</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
         def _sync():
             try:
                 import syncedlyrics
@@ -1161,42 +1161,60 @@ def post_download_callback(call):
                 query = re.sub(r'\s*\([^)]*\)\s*', '', filename_noext)
                 query = re.sub(r'\s*\[[^]]*\]\s*', '', query)
                 query = re.sub(r'\s*-\s*', ' ', query).strip()
-                lrc = syncedlyrics.search(query, allow_plain_format=True)
+                lrc = syncedlyrics.search(query, plain_only=True, save_path=lrc_path)
                 if lrc:
-                    with open(lrc_path, 'w', encoding='utf-8') as f:
-                        f.write(lrc)
-                    bot.send_message(chat_id, f"✅ <b>Sync Lirik berhasil</b>\n📄 <code>{os.path.basename(lrc_path)}</code>", parse_mode="HTML")
+                    bot.edit_message_text(f"✅ <b>Sync Lirik berhasil</b>\n📄 <code>{os.path.basename(lrc_path)}</code>", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
                 else:
-                    bot.send_message(chat_id, f"❌ <b>Sync Lirik gagal</b> - Lirik tidak ditemukan untuk: {query}", parse_mode="HTML")
+                    bot.edit_message_text(f"❌ <b>Sync Lirik gagal</b> - Lirik tidak ditemukan untuk: {query}", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
             except ImportError:
-                bot.send_message(chat_id, "❌ Module syncedlyrics tidak terinstall.")
+                bot.edit_message_text("❌ Module syncedlyrics tidak terinstall.", chat_id=chat_id, message_id=msg.message_id)
             except Exception as e:
-                bot.send_message(chat_id, f"❌ Error: {e}")
+                bot.edit_message_text(f"❌ Error: {e}", chat_id=chat_id, message_id=msg.message_id)
         if not _safe_submit_task(_sync):
-            bot.send_message(chat_id, "❌ Server sibuk, coba lagi.")
+            bot.edit_message_text("❌ Server sibuk, coba lagi.", chat_id=chat_id, message_id=msg.message_id)
     elif call.data == 'cmd_demucs':
         bot.answer_callback_query(call.id, "Pisah vokal...")
-        bot.send_message(chat_id, f"⏳ <b>Pisah Vokal (Demucs)</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
+        msg = bot.send_message(chat_id, f"⏳ <b>Pisah Vokal (Demucs)</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
         def _demucs():
             try:
                 demucs_bin = ZdtPaths.get_demucs_bin()
                 if not os.path.exists(demucs_bin):
                     demucs_bin = shutil.which("demucs")
                 if not demucs_bin:
-                    bot.send_message(chat_id, "❌ Demucs AI belum terinstal.")
+                    bot.edit_message_text("❌ Demucs AI belum terinstal.", chat_id=chat_id, message_id=msg.message_id)
                     return
                 target_dir = os.path.dirname(filepath)
                 cmd_args = [demucs_bin, "--two-stems=vocals", "-o", target_dir, filepath]
-                process = subprocess.run(cmd_args, capture_output=True, text=True, timeout=600)
+                process = _safe_popen(cmd_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                last_update = time.time()
+                log_buffer = []
+                for line in iter(process.stdout.readline, ''):
+                    if not line: break
+                    log_buffer.append(line.strip())
+                    log_buffer = log_buffer[-5:]
+                    if time.time() - last_update > 3.0:
+                        import html
+                        try:
+                            bot.edit_message_text(f"⏳ <b>Pisah Vokal</b>\n<pre>{html.escape(chr(10).join(log_buffer))}</pre>", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
+                        except Exception:
+                            pass
+                        last_update = time.time()
+                process.wait()
                 if process.returncode == 0:
                     name_no_ext = os.path.splitext(os.path.basename(filepath))[0]
-                    bot.send_message(chat_id, f"✅ <b>Pisah Vokal berhasil</b>\n📍 <code>{name_no_ext}_vocals / _novokal</code>", parse_mode="HTML")
+                    bot.edit_message_text(f"✅ <b>Pisah Vokal berhasil</b>\n📍 <code>{name_no_ext}_vocals / _novokal</code>", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
                 else:
-                    bot.send_message(chat_id, f"❌ <b>Pisah Vokal gagal</b>\n<pre>{process.stderr[-500:]}</pre>", parse_mode="HTML")
+                    bot.edit_message_text(f"❌ <b>Pisah Vokal gagal</b>", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
             except Exception as e:
-                bot.send_message(chat_id, f"❌ Error: {e}")
+                try:
+                    bot.edit_message_text(f"❌ Error: {e}", chat_id=chat_id, message_id=msg.message_id)
+                except Exception:
+                    bot.send_message(chat_id, f"❌ Error: {e}")
         if not _safe_submit_task(_demucs):
-            bot.send_message(chat_id, "❌ Server sibuk, coba lagi.")
+            try:
+                bot.edit_message_text("❌ Server sibuk, coba lagi.", chat_id=chat_id, message_id=msg.message_id)
+            except Exception:
+                bot.send_message(chat_id, "❌ Server sibuk, coba lagi.")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('cmd_'))
 def callback_query(call):
