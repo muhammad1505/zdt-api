@@ -687,7 +687,7 @@ Chat: {history_context}"""
                                             lines = res.stdout.strip().split('\n')
                                             all_results = []
                                             for line in lines:
-                                                parts = line.split('|', 1)
+                                                parts = line.rsplit('|', 1)
                                                 if len(parts) == 2:
                                                     all_results.append((parts[0].strip(), parts[1].strip()))
                                             
@@ -752,7 +752,7 @@ Chat: {history_context}"""
                                             # Sometimes yt-dlp returns channel links on playlist searches, we should filter or just list them
                                             idx = 1
                                             for line in lines:
-                                                parts = line.split('|', 1)
+                                                parts = line.rsplit('|', 1)
                                                 if len(parts) == 2:
                                                     title = html.escape(parts[0].strip())
                                                     url = html.escape(parts[1].strip())
@@ -1426,14 +1426,14 @@ def search_page_callback(call):
             lines = res.stdout.strip().split('\n')
             all_results = []
             for line in lines:
-                parts = line.split('|', 1)
+                parts = line.rsplit('|', 1)
                 if len(parts) == 2:
                     all_results.append((parts[0].strip(), parts[1].strip()))
             if not all_results:
                 try:
                     bot.edit_message_text("❌ Pencarian tidak menemukan hasil.", chat_id=call.message.chat.id, message_id=call.message.message_id)
                 except Exception as e:
-                    logging.warning(f"Failed to show no-results message (2): {e}")
+                    logging.warning(f"Failed to show no-results message: {e}")
                 return
             start = page * 5
             page_results = all_results[start:start + 5]
