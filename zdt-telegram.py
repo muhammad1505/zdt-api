@@ -547,7 +547,9 @@ Chat: {history_context}"""
                                 def _task():
                                     try:
                                         # Using unbuffered output trick via stdbuf or directly reading
-                                        process = _safe_popen([get_zdt_bin()] + cmd_args, stdout=subprocess.PIPE, text=True, bufsize=1)
+                                        bg_env = os.environ.copy()
+                                        bg_env['ZDT_DB_PATH'] = DB_PATH
+                                        process = _safe_popen([get_zdt_bin()] + cmd_args, stdout=subprocess.PIPE, text=True, bufsize=1, env=bg_env)
                                             
                                         last_update = time.time()
                                         log_buffer = []
@@ -1065,7 +1067,7 @@ def dl_confirm_callback(call):
     label = "Video" if is_video else "Audio"
 
     # Pass format and bitrate to zdt CLI via env vars
-    extra_env = {}
+    extra_env = {'ZDT_DB_PATH': DB_PATH}
     if not is_video:
         afmt = data.get('dl_audio_format', 'm4a')
         br = data.get('dl_bitrate', '128')
