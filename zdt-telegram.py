@@ -296,11 +296,16 @@ def get_config_value(key, default=""):
 
 def get_recent_media_files(limit=5):
     import glob
-    target = get_target_dir()
+    dirs = [get_target_dir()]
+    # Fallback to common download locations
+    for d in [os.path.expanduser("~/Music"), os.path.expanduser("~/Music/ZDT_Downloads")]:
+        if d not in dirs:
+            dirs.append(d)
     files = []
-    if os.path.exists(target):
-        for ext in ['*.mp3','*.m4a','*.flac','*.wav','*.ogg','*.opus','*.mp4','*.mkv']:
-            files.extend(glob.glob(os.path.join(target, ext)))
+    for d in dirs:
+        if os.path.exists(d):
+            for ext in ['*.mp3','*.m4a','*.flac','*.wav','*.ogg','*.opus','*.mp4','*.mkv']:
+                files.extend(glob.glob(os.path.join(d, ext)))
     files.sort(key=os.path.getmtime, reverse=True)
     return files[:limit]
 
@@ -913,6 +918,8 @@ def start_dl_flow(msg_or_call, url, via_search=False):
     bot.send_message(chat_id, f"📥 *Pilih tipe download:*\n`{url}`", parse_mode="Markdown", reply_markup=markup)
 
 
+AUDIO_FORMATS = {'m4a': '1', 'mp3': '2', 'flac': '3', 'wav': '4', 'opus': '5', 'ogg': '6'}
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('dl_fmt:'))
 def dl_format_callback(call):
     fmt = call.data.split(':')[1]
@@ -924,15 +931,9 @@ def dl_format_callback(call):
     data['dl_format'] = fmt
     if fmt == 'audio':
         markup = InlineKeyboardMarkup(row_width=3)
-        markup.add(
-            InlineKeyboardButton("64kbps", callback_data="dl_abr:64"),
-            InlineKeyboardButton("96kbps", callback_data="dl_abr:96"),
-            InlineKeyboardButton("128kbps", callback_data="dl_abr:128"),
-            InlineKeyboardButton("192kbps", callback_data="dl_abr:192"),
-            InlineKeyboardButton("256kbps", callback_data="dl_abr:256"),
-            InlineKeyboardButton("320kbps", callback_data="dl_abr:320"),
-        )
-        bot.edit_message_text("🎵 *Pilih Bitrate Audio:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        for name in ('m4a', 'mp3', 'flac', 'wav', 'opus', 'ogg'):
+            markup.add(InlineKeyboardButton(f"🎵 {name}", callback_data=f"dl_afmt:{name}"))
+        bot.edit_message_text("🎵 *Pilih Format Audio:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     else:
         markup = InlineKeyboardMarkup(row_width=3)
         markup.add(
@@ -946,6 +947,22 @@ def dl_format_callback(call):
             InlineKeyboardButton("2160p", callback_data="dl_vq:2160"),
         )
         bot.edit_message_text("🎬 *Pilih Kualitas Video:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('dl_afmt:'))
+def dl_audio_format_callback(call):
+    afmt = call.data.split(':')[1]
+    chat_id = call.message.chat.id
+    data = bot.user_data.get(chat_id, {})
+    if not data.get('dl_url'):
+        bot.answer_callback_query(call.id, "Sesi kadaluarsa.")
+        return
+    data['dl_audio_format'] = afmt
+    markup = InlineKeyboardMarkup(row_width=3)
+    for br in ('128', '192', '256', '320'):
+        markup.add(InlineKeyboardButton(f"{br}kbps", callback_data=f"dl_abr:{br}"))
+    bot.edit_message_text(f"🎵 *Pilih Bitrate Audio ({afmt}):*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     bot.answer_callback_query(call.id)
 
 
@@ -980,12 +997,17 @@ def _dl_show_confirm(msg, _call_data):
     data = bot.user_data.get(chat_id, {})
     url = data.get('dl_url', '?')
     fmt = data.get('dl_format', '?')
-    detail = data.get('dl_bitrate', data.get('dl_quality', '?'))
+    if fmt == 'audio':
+        afmt = data.get('dl_audio_format', 'm4a')
+        br = data.get('dl_bitrate', '128')
+        detail_str = f"{afmt} • {br}kbps"
+    else:
+        detail_str = f"{data.get('dl_quality', '?')}p"
 
     summary = f"📥 *Konfirmasi Download*\n"
     summary += f"🔗 `{url}`\n"
     summary += f"📁 Format: {'🎵 Audio' if fmt == 'audio' else '🎬 Video'}\n"
-    summary += f"⚙️  Detail: {detail}{'kbps' if fmt == 'audio' else 'p'}\n\n"
+    summary += f"⚙️  Detail: {detail_str}\n\n"
     summary += "_Lanjutkan download?_"
 
     markup = InlineKeyboardMarkup()
@@ -1015,6 +1037,15 @@ def dl_confirm_callback(call):
     cmd = ["--download-video" if is_video else "--download-audio", url]
     label = "Video" if is_video else "Audio"
 
+    # Pass format and bitrate to zdt CLI via env vars
+    extra_env = {}
+    if not is_video:
+        afmt = data.get('dl_audio_format', 'm4a')
+        br = data.get('dl_bitrate', '128')
+        if afmt in AUDIO_FORMATS:
+            extra_env['AUTO_FORMAT_SPEC'] = AUDIO_FORMATS[afmt]
+        extra_env['AUTO_BITRATE'] = br
+
     bot.edit_message_text(f"⏳ <b>Sedang Mendownload {label}...</b>\n📍 <code>{url}</code>", chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML")
     bot.answer_callback_query(call.id, f"Download {label} dimulai!")
     bot.user_data.pop(chat_id, None)
@@ -1023,7 +1054,9 @@ def dl_confirm_callback(call):
     sent_msg = call.message
     def _task():
         try:
-            process = _safe_popen([get_zdt_bin()] + cmd, stdout=subprocess.PIPE, text=True, bufsize=1)
+            env = os.environ.copy()
+            env.update(extra_env)
+            process = _safe_popen([get_zdt_bin()] + cmd, stdout=subprocess.PIPE, text=True, bufsize=1, env=env)
             last_update = time.time()
             log_buffer = []
             ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -1051,13 +1084,21 @@ def dl_confirm_callback(call):
                 _record_download(url, fmt)
                 bot.edit_message_text(f"✅ <b>{label} berhasil di-download!</b>\n\n<pre>{html.escape(final_context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML")
                 # Save last downloaded file path for post-download actions
-                last_file = get_recent_media_files(1)
-                if last_file:
+                dl_path = None
+                # Try to extract destination path from log output
+                dest_match = re.search(r'Destination:\s*(.+)', final_context, re.IGNORECASE)
+                if dest_match:
+                    dl_path = dest_match.group(1).strip().strip('"').strip("'")
+                if not dl_path or not os.path.exists(dl_path):
+                    last_file = get_recent_media_files(1)
+                    if last_file:
+                        dl_path = last_file[0]
+                if dl_path and os.path.exists(dl_path):
                     if not hasattr(bot, 'user_data'):
                         bot.user_data = {}
                     if chat_id not in bot.user_data:
                         bot.user_data[chat_id] = {}
-                    bot.user_data[chat_id]['last_dl_file'] = last_file[0]
+                    bot.user_data[chat_id]['last_dl_file'] = dl_path
                 # Send post-download options
                 dl_markup = InlineKeyboardMarkup(row_width=2)
                 dl_markup.add(
