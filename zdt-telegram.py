@@ -6,6 +6,7 @@ import time
 import subprocess
 import shutil
 import threading
+import sqlite3
 
 try:
     import telebot
@@ -100,8 +101,8 @@ def _record_download(url: str, fmt: str = 'audio', status: str = 'completed', ti
                      (url, title or url.rsplit('/', 1)[-1], fmt, status))
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error(f"Gagal record download: {e}")
 
 import logging
 logging.basicConfig(
@@ -920,6 +921,9 @@ def start_dl_flow(msg_or_call, url, via_search=False):
 
 AUDIO_FORMATS = {'m4a': '1', 'mp3': '2', 'flac': '3', 'wav': '4', 'opus': '5', 'ogg': '6'}
 
+def _dl_cancel_button():
+    return InlineKeyboardButton("❌ Batal", callback_data="dl_no")
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('dl_fmt:'))
 def dl_format_callback(call):
     fmt = call.data.split(':')[1]
@@ -931,21 +935,19 @@ def dl_format_callback(call):
     data['dl_format'] = fmt
     if fmt == 'audio':
         markup = InlineKeyboardMarkup(row_width=3)
+        row = []
         for name in ('m4a', 'mp3', 'flac', 'wav', 'opus', 'ogg'):
-            markup.add(InlineKeyboardButton(f"🎵 {name}", callback_data=f"dl_afmt:{name}"))
+            row.append(InlineKeyboardButton(name, callback_data=f"dl_afmt:{name}"))
+        markup.add(*row)
+        markup.add(_dl_cancel_button())
         bot.edit_message_text("🎵 *Pilih Format Audio:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     else:
-        markup = InlineKeyboardMarkup(row_width=3)
-        markup.add(
-            InlineKeyboardButton("144p", callback_data="dl_vq:144"),
-            InlineKeyboardButton("240p", callback_data="dl_vq:240"),
-            InlineKeyboardButton("360p", callback_data="dl_vq:360"),
-            InlineKeyboardButton("480p", callback_data="dl_vq:480"),
-            InlineKeyboardButton("720p", callback_data="dl_vq:720"),
-            InlineKeyboardButton("1080p", callback_data="dl_vq:1080"),
-            InlineKeyboardButton("1440p", callback_data="dl_vq:1440"),
-            InlineKeyboardButton("2160p", callback_data="dl_vq:2160"),
-        )
+        markup = InlineKeyboardMarkup(row_width=4)
+        row = []
+        for q in ('144', '240', '360', '480', '720', '1080', '1440', '2160'):
+            row.append(InlineKeyboardButton(f"{q}p", callback_data=f"dl_vq:{q}"))
+        markup.add(*row)
+        markup.add(_dl_cancel_button())
         bot.edit_message_text("🎬 *Pilih Kualitas Video:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     bot.answer_callback_query(call.id)
 
@@ -959,9 +961,12 @@ def dl_audio_format_callback(call):
         bot.answer_callback_query(call.id, "Sesi kadaluarsa.")
         return
     data['dl_audio_format'] = afmt
-    markup = InlineKeyboardMarkup(row_width=3)
+    markup = InlineKeyboardMarkup(row_width=4)
+    row = []
     for br in ('128', '192', '256', '320'):
-        markup.add(InlineKeyboardButton(f"{br}kbps", callback_data=f"dl_abr:{br}"))
+        row.append(InlineKeyboardButton(f"{br}kbps", callback_data=f"dl_abr:{br}"))
+    markup.add(*row)
+    markup.add(_dl_cancel_button())
     bot.edit_message_text(f"🎵 *Pilih Bitrate Audio ({afmt}):*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     bot.answer_callback_query(call.id)
 
@@ -1021,15 +1026,22 @@ def _dl_show_confirm(msg, _call_data):
         bot.send_message(chat_id, summary, parse_mode="Markdown", reply_markup=markup)
 
 
-@bot.callback_query_handler(func=lambda call: call.data in ('dl_go', 'dl_no'))
+@bot.callback_query_handler(func=lambda call: call.data == 'dl_no')
+def dl_cancel_callback(call):
+    chat_id = call.message.chat.id
+    bot.edit_message_text("❌ Download dibatalkan.", chat_id=chat_id, message_id=call.message.message_id)
+    bot.answer_callback_query(call.id, "Dibatalkan.")
+    if hasattr(bot, 'user_data') and chat_id in bot.user_data:
+        bot.user_data.pop(chat_id, None)
+
+@bot.callback_query_handler(func=lambda call: call.data == 'dl_go')
 def dl_confirm_callback(call):
     chat_id = call.message.chat.id
     data = bot.user_data.get(chat_id, {})
     url = data.get('dl_url', '')
-    if call.data == 'dl_no' or not url:
-        bot.edit_message_text("❌ Download dibatalkan.", chat_id=chat_id, message_id=call.message.message_id)
-        bot.answer_callback_query(call.id, "Dibatalkan.")
-        bot.user_data.pop(chat_id, None)
+    if not url:
+        bot.edit_message_text("❌ Sesi kadaluarsa.", chat_id=chat_id, message_id=call.message.message_id)
+        bot.answer_callback_query(call.id, "Sesi habis.")
         return
 
     fmt = data.get('dl_format', 'audio')
