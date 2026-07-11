@@ -1050,11 +1050,19 @@ def dl_confirm_callback(call):
             if process.returncode == 0:
                 _record_download(url, fmt)
                 bot.edit_message_text(f"✅ <b>{label} berhasil di-download!</b>\n\n<pre>{html.escape(final_context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML")
+                # Save last downloaded file path for post-download actions
+                last_file = get_recent_media_files(1)
+                if last_file:
+                    if not hasattr(bot, 'user_data'):
+                        bot.user_data = {}
+                    if chat_id not in bot.user_data:
+                        bot.user_data[chat_id] = {}
+                    bot.user_data[chat_id]['last_dl_file'] = last_file[0]
                 # Send post-download options
                 dl_markup = InlineKeyboardMarkup(row_width=2)
                 dl_markup.add(
-                    InlineKeyboardButton("🎤 Sync Lirik", callback_data=f"cmd_sync:{url}"),
-                    InlineKeyboardButton("✂️ Pisah Vokal", callback_data=f"cmd_demucs:{url}"),
+                    InlineKeyboardButton("🎤 Sync Lirik", callback_data="cmd_sync"),
+                    InlineKeyboardButton("✂️ Pisah Vokal", callback_data="cmd_demucs"),
                 )
                 bot.send_message(chat_id, "📌 *Aksi setelah download:*\nPilih opsi tambahan di bawah ini.", parse_mode="Markdown", reply_markup=dl_markup)
             else:
@@ -1065,27 +1073,31 @@ def dl_confirm_callback(call):
     if not _safe_submit_task(_task):
         bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=chat_id, message_id=sent_msg.message_id)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('cmd_sync:') or call.data.startswith('cmd_demucs:'))
+@bot.callback_query_handler(func=lambda call: call.data in ('cmd_sync', 'cmd_demucs'))
 def post_download_callback(call):
-    prefix, url = call.data.split(':', 1)
     chat_id = call.message.chat.id
-    if prefix == 'cmd_sync':
-        bot.answer_callback_query(call.id, "Sync lirik via CLI...")
-        bot.send_message(chat_id, f"⏳ <b>Sync Lirik</b>\n📍 <code>{url}</code>\nProses via command line.", parse_mode="HTML")
+    data = getattr(bot, 'user_data', {}).get(chat_id, {})
+    filepath = data.get('last_dl_file', '')
+    if not filepath or not os.path.exists(filepath):
+        bot.answer_callback_query(call.id, "File sudah tidak ada!")
+        return
+    if call.data == 'cmd_sync':
+        bot.answer_callback_query(call.id, "Sync lirik...")
+        bot.send_message(chat_id, f"⏳ <b>Sync Lirik</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
         def _sync():
             try:
-                res = subprocess.run([get_zdt_bin(), "--sync-lirik", url], capture_output=True, text=True, timeout=120)
+                res = subprocess.run([get_zdt_bin(), "--sync-lirik", filepath], capture_output=True, text=True, timeout=120)
                 bot.send_message(chat_id, f"{'✅' if res.returncode == 0 else '❌'} <b>Sync Lirik {'berhasil' if res.returncode == 0 else 'gagal'}</b>\n<pre>{res.stdout[-500:] if res.stdout else res.stderr[-500:]}</pre>", parse_mode="HTML")
             except Exception as e:
                 bot.send_message(chat_id, f"❌ Error: {e}")
         if not _safe_submit_task(_sync):
             bot.send_message(chat_id, "❌ Server sibuk, coba lagi.")
-    elif prefix == 'cmd_demucs':
-        bot.answer_callback_query(call.id, "Pisah vokal via CLI...")
-        bot.send_message(chat_id, f"⏳ <b>Pisah Vokal (Demucs)</b>\n📍 <code>{url}</code>\nProses via command line.", parse_mode="HTML")
+    elif call.data == 'cmd_demucs':
+        bot.answer_callback_query(call.id, "Pisah vokal...")
+        bot.send_message(chat_id, f"⏳ <b>Pisah Vokal (Demucs)</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
         def _demucs():
             try:
-                res = subprocess.run([get_zdt_bin(), "--demucs", url], capture_output=True, text=True, timeout=600)
+                res = subprocess.run([get_zdt_bin(), "--demucs", filepath], capture_output=True, text=True, timeout=600)
                 bot.send_message(chat_id, f"{'✅' if res.returncode == 0 else '❌'} <b>Pisah Vokal {'berhasil' if res.returncode == 0 else 'gagal'}</b>\n<pre>{res.stdout[-500:] if res.stdout else res.stderr[-500:]}</pre>", parse_mode="HTML")
             except Exception as e:
                 bot.send_message(chat_id, f"❌ Error: {e}")
