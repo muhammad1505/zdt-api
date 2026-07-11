@@ -93,12 +93,19 @@ def _safe_popen(cmd_args, **kwargs):
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'zdt_api.db')
 
-def _record_download(url: str, fmt: str = 'audio', status: str = 'completed', title: str = ''):
+def _record_download(url: str, fmt: str = 'audio', status: str = 'completed', title: str = '', file_path: str = ''):
     """Record a download in the shared database for unified statistics."""
     try:
         conn = sqlite3.connect(DB_PATH, timeout=5)
-        conn.execute("INSERT INTO downloads (url, title, format, status, completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))",
-                     (url, title or url.rsplit('/', 1)[-1], fmt, status))
+        if not title and file_path:
+            title = os.path.splitext(os.path.basename(file_path))[0]
+        if not title:
+            title = url.rstrip('/').rsplit('/', 1)[-1] if '/' in url.rstrip('/') else url
+        file_size = os.path.getsize(file_path) if file_path and os.path.exists(file_path) else None
+        conn.execute(
+            "INSERT INTO downloads (url, title, format, status, file_path, file_size, completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))",
+            (url, title, fmt, status, file_path, file_size)
+        )
         conn.commit()
         conn.close()
     except Exception as e:
@@ -576,7 +583,15 @@ Chat: {history_context}"""
                                             
                                         if process.returncode == 0:
                                             if cmd_args and cmd_args[0] in ('--download-audio', '--download-video') and len(cmd_args) > 1:
-                                                _record_download(cmd_args[1], 'video' if 'video' in cmd_args[0] else 'audio')
+                                                dl_path = None
+                                                dest_match = re.search(r'Destination:\s*(.+)', final_context, re.IGNORECASE)
+                                                if dest_match:
+                                                    dl_path = dest_match.group(1).strip().strip('"').strip("'")
+                                                if not dl_path or not os.path.exists(dl_path):
+                                                    last_file = get_recent_media_files(1)
+                                                    if last_file:
+                                                        dl_path = last_file[0]
+                                                _record_download(cmd_args[1], 'video' if 'video' in cmd_args[0] else 'audio', file_path=dl_path)
                                             if progress_msg:
                                                 try:
                                                     bot.edit_message_text(f"✅ <b>{success_msg}</b>\n\n📄 <b>Log Terakhir:</b>\n<pre>{html.escape(final_context)}</pre>", chat_id=progress_msg.chat.id, message_id=progress_msg.message_id, parse_mode="HTML")
@@ -1093,7 +1108,6 @@ def dl_confirm_callback(call):
             final_context = "\n".join(log_buffer)
             import html
             if process.returncode == 0:
-                _record_download(url, fmt)
                 bot.edit_message_text(f"✅ <b>{label} berhasil di-download!</b>\n\n<pre>{html.escape(final_context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML")
                 # Save last downloaded file path for post-download actions
                 dl_path = None
@@ -1111,6 +1125,8 @@ def dl_confirm_callback(call):
                     if chat_id not in bot.user_data:
                         bot.user_data[chat_id] = {}
                     bot.user_data[chat_id]['last_dl_file'] = dl_path
+                # Record with real file info (title from filename, file size)
+                _record_download(url, fmt, file_path=dl_path)
                 # Send post-download options
                 dl_markup = InlineKeyboardMarkup(row_width=2)
                 dl_markup.add(
