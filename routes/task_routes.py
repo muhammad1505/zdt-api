@@ -41,7 +41,12 @@ def list_tasks():
         from task_queue import get_manager
         mgr = get_manager()
         user_id = _get_user_id()
-        tasks = mgr.list_tasks(status=status, user_id=user_id, limit=limit, offset=offset)
+        role = None
+        if hasattr(g, 'user') and g.user:
+            role = g.user.get('role')
+        is_admin = role == 'admin'
+        # Admin lihat semua task, non-admin hanya task sendiri
+        tasks = mgr.list_tasks(status=status, user_id=None if is_admin else user_id, limit=limit, offset=offset)
         stats = mgr.get_queue_stats()
         return jsonify({'success': True, 'tasks': tasks, 'stats': stats})
     except Exception as e:

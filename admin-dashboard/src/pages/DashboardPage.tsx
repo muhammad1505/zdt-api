@@ -1,25 +1,25 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { getDashboard, getDependencies, installDependencies, getServices } from '../api/client';
-import type { DashboardData, DependencyInfo } from '../types';
-import { Cpu, HardDrive, Clock, Activity, Folder, Server, Globe, Package, CheckCircle, XCircle, Download, ChevronDown, ChevronRight, ArrowUp, X, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import api, { getDashboard } from '../api/client';
+import type { DashboardData } from '../types';
+import { Cpu, HardDrive, Clock, Server, Globe, ListTodo, Activity, Wrench, RefreshCw, ChevronRight } from 'lucide-react';
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [deps, setDeps] = useState<DependencyInfo[] | null>(null);
-  const [installing, setInstalling] = useState(false);
-  const [installMsg, setInstallMsg] = useState<string | null>(null);
-  const [depsOpen, setDepsOpen] = useState(false);
-  const [showAllServices, setShowAllServices] = useState(false);
-  const [allServices, setAllServices] = useState<any[] | null>(null);
+  const [taskStats, setTaskStats] = useState<any>({});
+  const navigate = useNavigate();
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     const fetch = async () => {
       try {
-        const d = await getDashboard();
+        const [d, t] = await Promise.all([
+          getDashboard(),
+          api.get('/api/tasks').then(r => r.data).catch(() => ({ stats: {} })),
+        ]);
         setData(d);
+        setTaskStats(t.stats || {});
       } catch (err: any) {
         setError(err.response?.data?.error || 'Gagal memuat dashboard');
       }
@@ -30,21 +30,6 @@ export default function DashboardPage() {
     document.addEventListener('visibilitychange', onVis);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVis); };
   }, []);
-
-  useEffect(() => {
-    getDependencies().then(r => setDeps(r.dependencies)).catch(() => {});
-  }, []);
-
-  const handleInstall = async () => {
-    setInstalling(true); setInstallMsg(null);
-    try {
-      const r = await installDependencies();
-      setInstallMsg(r.success ? 'Instalasi berhasil!' : 'Instalasi gagal');
-      const fresh = await getDependencies();
-      setDeps(fresh.dependencies);
-    } catch (err: any) { setInstallMsg(err.response?.data?.error || 'Gagal install'); }
-    setInstalling(false);
-  };
 
   if (error) return <div className="text-error p-10 text-center">{error}</div>;
 
@@ -71,114 +56,137 @@ export default function DashboardPage() {
   const memPct = data.memory.total_gb > 0 ? Math.round((memUsed / data.memory.total_gb) * 100) : 0;
   const diskPct = data.disk && data.disk.total > 0 ? Math.round((data.disk.used / data.disk.total) * 100) : 0;
   const cpuAvg = (data.cpu.load_1m + data.cpu.load_5m + data.cpu.load_15m) / 3;
+  const totalTasks = (taskStats.queued || 0) + (taskStats.running || 0) + (taskStats.completed || 0) + (taskStats.failed || 0) + (taskStats.cancelled || 0);
+
+  const quickLinks = [
+    { path: '/tasks', icon: ListTodo, label: 'Task Queue', desc: `${totalTasks} total tasks`, color: '#465fff', count: totalTasks },
+    { path: '/files', icon: HardDrive, label: 'Files', desc: `${data.file_count} files`, color: '#12b76a', count: data.file_count },
+    { path: '/tools', icon: Wrench, label: 'Tools', desc: 'Run maintenance tools', color: '#f79009' },
+    { path: '/logs', icon: Activity, label: 'Logs', desc: 'Activity & system logs', color: '#ee46bc' },
+  ];
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-base-content">Dashboard</h2>
-          <p className="text-sm text-base-content/60 mt-1">
-            v{data.version} · {data.hostname} · {data.arch}
-          </p>
+          <p className="text-sm text-base-content/60 mt-1">v{data.version} · {data.hostname} · {data.arch}</p>
         </div>
-        <button
-          onClick={async () => {
-            try {
-              const d = await getDashboard();
-              setData(d);
-            } catch {}
-          }}
-          className="btn btn-ghost btn-sm"
-          title="Refresh dashboard data"
-        >
-          <RefreshCw size={14} />
-          <span className="hidden sm:inline">Refresh</span>
+        <button onClick={async () => { try { const d = await getDashboard(); setData(d); } catch {} }} className="btn btn-ghost btn-sm">
+          <RefreshCw size={14} /> <span className="hidden sm:inline">Refresh</span>
         </button>
       </div>
 
-      {/* Metric Cards */}
+      {/* System Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <div className="card bg-base-100 border border-base-200 p-5 md:p-6 hover:shadow-md hover:border-primary/30 transition-all duration-300">
-          <div className="flex items-center justify-center w-12 h-12 bg-base-200 rounded-xl">
+        <div className="card bg-base-100 border border-base-200 p-5 md:p-6 hover:shadow-md transition-all duration-300">
+          <div className="flex items-center justify-center w-12 h-12 bg-primary/10 rounded-xl">
             <Cpu className="text-primary size-6" />
           </div>
-          <div className="flex items-end justify-between mt-5">
-            <div>
-              <span className="text-sm text-base-content/60">CPU Load</span>
-              <h4 className="mt-2 font-bold text-base-content text-[30px] leading-[38px]">{data.cpu.load_1m.toFixed(2)}</h4>
-            </div>
-            <span className="badge badge-success gap-1">
-              <ArrowUp className="size-3.5" /> 1m avg
-            </span>
+          <div className="mt-5">
+            <span className="text-sm text-base-content/60">CPU Load</span>
+            <h4 className="font-bold text-base-content text-[30px] leading-[38px]">{data.cpu.load_1m.toFixed(2)}</h4>
           </div>
-          <div className="w-full h-2 bg-base-200 rounded-full mt-4 overflow-hidden">
+          <div className="w-full h-2 bg-base-200 rounded-full mt-3 overflow-hidden">
             <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${Math.min(cpuAvg * 10, 100)}%` }} />
           </div>
           <p className="text-xs text-base-content/60 mt-2">5m: {data.cpu.load_5m.toFixed(2)} · 15m: {data.cpu.load_15m.toFixed(2)}</p>
         </div>
 
-        <div className="group card bg-base-100 border border-base-200 p-5 md:p-6 hover:shadow-md hover:border-warning/30 transition-all duration-300">
-          <div className="flex items-center justify-center w-12 h-12 bg-base-200 rounded-xl group-hover:scale-110 transition-transform">
+        <div className="card bg-base-100 border border-base-200 p-5 md:p-6 hover:shadow-md transition-all duration-300">
+          <div className="flex items-center justify-center w-12 h-12 bg-warning/10 rounded-xl">
             <Activity className="text-warning size-6" />
           </div>
-          <div className="flex items-end justify-between mt-5">
-            <div>
-              <span className="text-sm text-base-content/60">Memory</span>
-              <h4 className="mt-2 font-bold text-base-content text-[30px] leading-[38px]">{memUsed.toFixed(1)} <span className="text-base font-normal text-base-content/60">/ {data.memory.total_gb} GB</span></h4>
-            </div>
-            <span className="badge badge-warning gap-1">
-              {memPct}% used
-            </span>
+          <div className="mt-5">
+            <span className="text-sm text-base-content/60">Memory</span>
+            <h4 className="font-bold text-base-content text-[30px] leading-[38px]">{memUsed.toFixed(1)} <span className="text-base font-normal text-base-content/60">/ {data.memory.total_gb} GB</span></h4>
           </div>
-          <div className="w-full h-2 bg-base-200 rounded-full mt-4 overflow-hidden">
+          <div className="w-full h-2 bg-base-200 rounded-full mt-3 overflow-hidden">
             <div className="h-full rounded-full bg-warning transition-all duration-500" style={{ width: `${memPct}%` }} />
           </div>
-          <p className="text-xs text-base-content/60 mt-2">{data.memory.available_gb.toFixed(1)} GB available</p>
+          <p className="text-xs text-base-content/60 mt-2"><span className="font-medium">{data.memory.available_gb.toFixed(1)} GB</span> available</p>
         </div>
 
         <div className="card bg-base-100 border border-base-200 p-5 md:p-6 hover:shadow-md transition-all duration-300">
-          <div className="flex items-center justify-center w-12 h-12 bg-base-200 rounded-xl">
+          <div className="flex items-center justify-center w-12 h-12 rounded-xl" style={{ background: (diskPct > 80 ? '#f0443820' : diskPct > 50 ? '#f7900920' : '#12b76a20') }}>
             <HardDrive className={`size-6 ${diskPct > 80 ? 'text-error' : diskPct > 50 ? 'text-warning' : 'text-success'}`} />
           </div>
-          <div className="flex items-end justify-between mt-5">
-            <div>
-              <span className="text-sm text-base-content/60">Disk</span>
-              <h4 className="mt-2 font-bold text-base-content text-[30px] leading-[38px]">{data.disk?.used || 0} <span className="text-base font-normal text-base-content/60">/ {data.disk?.total || 0} GB</span></h4>
-            </div>
-            <span className={`badge gap-1 ${
-              diskPct > 80 ? 'badge-error'
-              : diskPct > 50 ? 'badge-warning'
-              : 'badge-success'
-            }`}>
-              {diskPct}%
-            </span>
+          <div className="mt-5">
+            <span className="text-sm text-base-content/60">Disk</span>
+            <h4 className="font-bold text-base-content text-[30px] leading-[38px]">{data.disk?.used || 0} <span className="text-base font-normal text-base-content/60">/ {data.disk?.total || 0} GB</span></h4>
           </div>
-          <div className="w-full h-2 bg-base-200 rounded-full mt-4 overflow-hidden">
-            <div className={`h-full rounded-full transition-all duration-500 ${
-              diskPct > 80 ? 'bg-error' : diskPct > 50 ? 'bg-warning' : 'bg-success'
-            }`} style={{ width: `${diskPct}%` }} />
+          <div className="w-full h-2 bg-base-200 rounded-full mt-3 overflow-hidden">
+            <div className={`h-full rounded-full transition-all duration-500 ${diskPct > 80 ? 'bg-error' : diskPct > 50 ? 'bg-warning' : 'bg-success'}`} style={{ width: `${diskPct}%` }} />
           </div>
-          <p className="text-xs text-base-content/60 mt-2">{data.disk?.free || 0} GB free</p>
+          <p className="text-xs text-base-content/60 mt-2"><span className="font-medium">{data.disk?.free || 0} GB</span> free</p>
         </div>
 
         <div className="card bg-base-100 border border-base-200 p-5 md:p-6 hover:shadow-md transition-all duration-300">
-          <div className="flex items-center justify-center w-12 h-12 bg-base-200 rounded-xl">
+          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-base-200">
             <Clock className="text-primary size-6" />
           </div>
-          <div className="flex items-end justify-between mt-5">
-            <div>
-              <span className="text-sm text-base-content/60">Uptime</span>
-              <h4 className="mt-2 font-bold text-base-content text-[30px] leading-[38px]">
-                {Math.floor(data.uptime_hours / 24)}d {Math.floor(data.uptime_hours % 24)}h
-              </h4>
-            </div>
+          <div className="mt-5">
+            <span className="text-sm text-base-content/60">Uptime</span>
+            <h4 className="font-bold text-base-content text-[30px] leading-[38px]">
+              {Math.floor(data.uptime_hours / 24)}d {Math.floor(data.uptime_hours % 24)}h
+            </h4>
           </div>
           <p className="text-xs text-base-content/60 mt-6">Python {data.python} · {data.arch}</p>
         </div>
       </div>
 
-      {/* System Info + Storage */}
+      {/* Task Stats Mini Dashboard */}
+      <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <ListTodo size={18} className="text-primary" />
+          <h3 className="text-base font-medium text-base-content flex-1">Task Queue Overview</h3>
+          <button onClick={() => navigate('/tasks')} className="btn btn-ghost btn-xs gap-1">
+            View All <ChevronRight size={12} />
+          </button>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {[
+            { key: 'queued', label: 'Queued', value: taskStats.queued || 0, color: 'text-warning', bg: 'bg-warning/10' },
+            { key: 'running', label: 'Running', value: taskStats.running || 0, color: 'text-primary', bg: 'bg-primary/10' },
+            { key: 'completed', label: 'Completed', value: taskStats.completed || 0, color: 'text-success', bg: 'bg-success/10' },
+            { key: 'failed', label: 'Failed', value: taskStats.failed || 0, color: 'text-error', bg: 'bg-error/10' },
+            { key: 'total', label: 'Total', value: totalTasks, color: 'text-base-content', bg: 'bg-base-200' },
+          ].map(s => (
+            <div key={s.key} className={`rounded-xl p-4 text-center ${s.bg}`}>
+              <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+              <div className="text-xs font-medium text-base-content/60 mt-1">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Quick Links + System Info */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-6">
+        {/* Quick Links */}
+        <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
+          <h3 className="text-base font-medium text-base-content mb-4 flex items-center gap-2">
+            <Server className="text-primary size-5" /> Quick Access
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            {quickLinks.map(link => {
+              const Icon = link.icon;
+              return (
+                <div key={link.path} onClick={() => navigate(link.path)} className="flex items-center gap-3 p-3 rounded-xl border border-base-200 hover:border-primary/30 hover:shadow-sm cursor-pointer transition-all">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: link.color + '15' }}>
+                    <Icon size={18} style={{ color: link.color }} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-base-content">{link.label}</div>
+                    <div className="text-xs text-base-content/60 truncate">{link.desc}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* System Info */}
         <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
           <h3 className="text-base font-medium text-base-content mb-4 flex items-center gap-2">
             <Server className="text-primary size-5" /> System Info
@@ -189,35 +197,14 @@ export default function DashboardPage() {
               { label: 'Architecture', value: data.arch },
               { label: 'Python', value: data.python },
               { label: 'Version', value: data.version },
+              { label: 'Target Dir', value: data.target_dir },
               { label: 'IP Addresses', value: data.ips?.join(', ') || 'N/A' },
             ].map(item => (
               <div key={item.label} className="flex justify-between py-2.5 border-b border-base-200 last:border-0">
                 <span className="text-sm text-base-content/60">{item.label}</span>
-                <span className="text-sm text-base-content font-mono text-right">{item.value}</span>
+                <span className="text-sm text-base-content font-mono text-right max-w-[60%] truncate">{item.value}</span>
               </div>
             ))}
-          </div>
-        </div>
-
-        <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
-          <h3 className="text-base font-medium text-base-content mb-4 flex items-center gap-2">
-            <Folder className="text-warning size-5" /> Storage
-          </h3>
-          <div className="mb-4">
-            <span className="text-sm text-base-content/60">Target Directory</span>
-            <code className="block mt-1 text-sm font-mono text-base-content bg-base-200 p-3 rounded-lg border border-base-200 break-all">
-              {data.target_dir}
-            </code>
-          </div>
-          <div className="flex gap-6">
-            <div>
-              <span className="text-xs text-base-content/60">Files</span>
-              <div className="text-xl font-bold text-base-content">{data.file_count}</div>
-            </div>
-            <div>
-              <span className="text-xs text-base-content/60">Free Space</span>
-              <div className="text-xl font-bold text-success">{data.disk?.free || 0} GB</div>
-            </div>
           </div>
         </div>
       </div>
@@ -228,36 +215,29 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2 mb-4">
             <Server className="text-primary size-5" />
             <h3 className="text-base font-medium text-base-content flex-1">Services</h3>
-            <button onClick={async () => {
-              setShowAllServices(true);
-              try { const r = await getServices(); setAllServices(r.services || []); } catch { setAllServices([]); }
-            }}
-              className="btn btn-ghost btn-xs">
-              Show all
+            <button onClick={() => navigate('/settings?tab=services')} className="btn btn-ghost btn-xs gap-1">
+              Manage <ChevronRight size={12} />
             </button>
           </div>
-          {Object.entries(data.services).map(([name, running]) => {
-            const isWatch = name.includes('watch');
-            return (
-              <div key={name} className={`flex justify-between py-2.5 border-b border-base-200 last:border-0 ${isWatch ? 'bg-warning/5 -mx-5 px-5' : ''}`}>
-                <span className="flex items-center gap-2 text-sm text-base-content">
-                  {name.replace('zdt-', '').replace('.py', '')}
-                  {isWatch && (
-                    <span className={`badge ${running ? 'badge-success' : 'badge-error'} text-[10px]`}>WATCH</span>
-                  )}
-                </span>
-                  <span className={`inline-flex items-center gap-1 text-xs font-medium ${running ? 'text-success' : 'text-error'}`}>
-                  {running ? <><span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" /> Running</> : <><span className="w-1.5 h-1.5 rounded-full bg-error" /> Stopped</>}
-                </span>
-              </div>
-            );
-          })}
+          {Object.entries(data.services).map(([name, running]) => (
+            <div key={name} className="flex justify-between py-2.5 border-b border-base-200 last:border-0">
+              <span className="flex items-center gap-2 text-sm text-base-content">
+                {name.replace('zdt-', '').replace('.py', '')}
+              </span>
+              <span className={`inline-flex items-center gap-1 text-xs font-medium ${running ? 'text-success' : 'text-error'}`}>
+                {running ? <><span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" /> Running</> : <><span className="w-1.5 h-1.5 rounded-full bg-error" /> Stopped</>}
+              </span>
+            </div>
+          ))}
         </div>
 
         <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
           <div className="flex items-center gap-3 mb-4">
             <Globe className={data.vpn?.connected ? 'text-success size-5' : 'text-error size-5'} />
-            <h3 className="text-base font-medium text-base-content">VPN</h3>
+            <h3 className="text-base font-medium text-base-content flex-1">VPN</h3>
+            <button onClick={() => navigate('/settings?tab=vpn')} className="btn btn-ghost btn-xs gap-1">
+              Manage <ChevronRight size={12} />
+            </button>
           </div>
           <div className="py-2.5 border-b border-base-200 flex justify-between">
             <span className="text-sm text-base-content/60">Status</span>
@@ -271,142 +251,12 @@ export default function DashboardPage() {
               <span className="text-sm text-base-content font-mono">{data.vpn.ip}</span>
             </div>
           )}
-          {data.ips && data.ips.length > 0 && (
-            <div className="py-2.5 flex justify-between">
-              <span className="text-sm text-base-content/60">Local IPs</span>
-              <div className="text-right">
-                {data.ips.map((ip: string) => (
-                  <div key={ip} className="text-sm text-base-content font-mono">{ip}</div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Dependencies */}
-      <div className="card bg-base-100 border border-base-200 p-5 md:p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Package className="text-primary size-5" />
-          <h3 className="text-base font-medium text-base-content flex-1">Dependencies</h3>
-          <div className="flex items-center gap-2">
-            {installMsg && (
-              <span className={`text-xs ${installMsg.includes('berhasil') ? 'text-success' : 'text-error'}`}>
-                {installMsg}
-              </span>
-            )}
-            <button
-              onClick={handleInstall}
-              disabled={installing}
-              className="btn btn-primary btn-xs gap-1.5"
-            >
-              <Download size={14} /> {installing ? 'Installing...' : 'Install All'}
-            </button>
-            <button
-              onClick={() => setDepsOpen(!depsOpen)}
-              className="btn btn-ghost btn-xs"
-            >
-              {depsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            </button>
+          <div className="py-2.5 flex justify-between">
+            <span className="text-sm text-base-content/60">Server</span>
+            <span className="text-sm text-base-content font-mono">{data.vpn.server || '-'}</span>
           </div>
         </div>
-        {deps === null ? (
-          <div className="text-sm text-base-content/60">Loading dependencies...</div>
-        ) : (
-          <>
-            {(() => {
-              const mainKeys = new Set(['ffmpeg', 'yt-dlp', 'spotdl', 'mutagen', 'syncedlyrics', 'demucs']);
-              const filtered = deps.filter(d => mainKeys.has(d._key));
-              const hidden = deps.filter(d => !mainKeys.has(d._key) && d._group !== 'core');
-              return (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {filtered.map(d => (
-                      <div key={d._key} className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${
-                        d.installed ? 'bg-success/5 border-success/20' : 'bg-error/5 border-error/20'
-                      }`}>
-                        {d.installed
-                          ? <CheckCircle size={16} className="text-success shrink-0" />
-                          : <XCircle size={16} className="text-error shrink-0" />
-                        }
-                        <span className="text-sm text-base-content flex-1">{d._label}</span>
-                        <span className={`text-xs font-mono ${d.installed ? 'text-success' : 'text-error'}`}>
-                          {d.installed ? (d.version || 'installed') : 'missing'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  {hidden.length > 0 && (
-                    <>
-                      {depsOpen && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
-                          {hidden.map(d => (
-                            <div key={d._key} className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${
-                              d.installed ? 'bg-success/5 border-success/20' : 'bg-error/5 border-error/20'
-                            }`}>
-                              {d.installed
-                                ? <CheckCircle size={16} className="text-success shrink-0" />
-                                : <XCircle size={16} className="text-error shrink-0" />
-                              }
-                              <span className="text-sm text-base-content flex-1">{d._label}</span>
-                              <span className={`text-xs font-mono ${d.installed ? 'text-success' : 'text-error'}`}>
-                                {d.installed ? (d.version || 'installed') : 'missing'}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <button
-                        onClick={() => setDepsOpen(!depsOpen)}
-                        className="btn btn-ghost btn-xs w-full mt-2"
-                      >
-                        {depsOpen ? 'Hide ' + hidden.length + ' others' : 'Show all (' + (filtered.length + hidden.length) + ' deps)'}
-                      </button>
-                    </>
-                  )}
-                </>
-              );
-            })()}
-          </>
-        )}
       </div>
-
-      {/* All Services Modal */}
-      {showAllServices && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999] animate-fadeIn" onClick={() => { setShowAllServices(false); setAllServices(null); }}>
-          <div className="card bg-base-100 border border-base-200 w-[500px] max-w-[95vw] max-h-[85vh] shadow-md p-6 overflow-y-auto animate-scaleIn" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-base font-semibold text-base-content">All Services</h3>
-              <button onClick={() => { setShowAllServices(false); setAllServices(null); }}
-                className="btn btn-ghost btn-xs">
-                <X size={16} />
-              </button>
-            </div>
-            {allServices === null ? (
-              <div className="text-center py-8 text-sm text-base-content/60">Loading...</div>
-            ) : allServices.length === 0 ? (
-              <div className="text-center py-8 text-sm text-base-content/60">No services found</div>
-            ) : (
-              <div className="space-y-2">
-                {allServices.map(svc => (
-                  <div key={svc.name} className={`flex justify-between items-center py-3 px-4 rounded-lg border ${svc.active === 'active' || svc.active === true ? 'border-success/20 bg-success/5' : 'border-base-200 bg-base-100'}`}>
-                    <div>
-                      <div className="text-sm font-medium text-base-content">{svc.label || svc.name.replace('zdt-', '')}</div>
-                      <div className="text-[11px] text-base-content/60 font-mono mt-0.5">{svc.name}.service</div>
-                    </div>
-                    <span className={`text-xs font-medium ${svc.active === 'active' || svc.active === true ? 'text-success' : 'text-error'}`}>
-                      {svc.active === 'active' || svc.active === true ? '● Running' : '○ Stopped'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="mt-5 text-center">
-              <span className="text-xs text-base-content/60">Manage services in <Link to="/settings?tab=services" className="text-primary hover:underline">Settings → Services</Link></span>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

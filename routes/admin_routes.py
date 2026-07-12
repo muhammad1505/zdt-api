@@ -1177,9 +1177,28 @@ _ZDT_DEMUCS_BIN = os.path.expanduser('~/.local/share/zdt/demucs_venv/bin/demucs'
 def _check_binary(name):
     path = shutil.which(name)
     if not path:
+        extra_paths = [
+            '/usr/local/bin/' + name,
+            '/usr/bin/' + name,
+            os.path.expanduser('~/.local/bin/' + name),
+            os.path.expanduser(f'~/.local/nodejs/bin/{name}'),
+            os.path.expanduser(f'~/.nvm/versions/node/*/bin/{name}'),
+        ]
+        for p in extra_paths:
+            expanded = os.path.expanduser(p)
+            if '*' in expanded:
+                import glob as _glob
+                matches = _glob.glob(expanded)
+                if matches:
+                    path = matches[0]
+                    break
+            elif os.path.isfile(expanded):
+                path = expanded
+                break
+    if not path:
         return {'name': name, 'type': 'binary', 'installed': False, 'version': None}
     try:
-        ver = subprocess.run([name, '--version'], capture_output=True, text=True, timeout=10)
+        ver = subprocess.run([path, '--version'], capture_output=True, text=True, timeout=10)
         v = ver.stdout.strip().split('\n')[0] or ver.stderr.strip().split('\n')[0]
         return {'name': name, 'type': 'binary', 'installed': True, 'version': v or 'ok', 'path': path}
     except Exception:

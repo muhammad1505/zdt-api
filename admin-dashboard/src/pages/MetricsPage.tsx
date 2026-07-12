@@ -40,7 +40,11 @@ export default function MetricsPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchMetrics(hours); }, [hours, fetchMetrics]);
+  useEffect(() => {
+    fetchMetrics(hours);
+    const interval = setInterval(() => fetchMetrics(hours), 30000);
+    return () => clearInterval(interval);
+  }, [hours, fetchMetrics]);
 
   const latest = history[history.length - 1] || {};
   const cpuData = history.map(h => h.cpu_load_1m ?? 0);
