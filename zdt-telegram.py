@@ -804,8 +804,8 @@ Chat: {history_context}"""
                                             bot.reply_to(message, f"🎯 <b>Hasil Pencarian Playlist:</b>\n\n{out_text}\n\n<i>Balas dengan nomor (misal: 'download playlist nomor 1') atau linknya!</i>", parse_mode="HTML", link_preview_options=telebot.types.LinkPreviewOptions(is_disabled=True))
                                         else:
                                             bot.reply_to(message, "❌ Pencarian playlist tidak menemukan hasil.")
-                                        except Exception as e:
-                                            bot.reply_to(message, f"❌ Error: {_friendly_error(e)}")
+                                    except Exception as e:
+                                        bot.reply_to(message, f"❌ Error: {_friendly_error(e)}")
                                 if not _safe_submit_task(_search_playlist_task):
                                     bot.reply_to(message, "❌ Server sibuk, coba lagi nanti.")
                             elif action == "hapus vokal":
