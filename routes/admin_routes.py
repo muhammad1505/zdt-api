@@ -472,8 +472,12 @@ def activity_logs():
 @requires_admin
 def restart_api():
     try:
-        subprocess.Popen(['systemctl', 'restart', 'zdt-api', '--no-block'], start_new_session=True)
-        return jsonify({'success': True, 'message': 'API server restart initiated (delayed)'})
+        import threading as _t
+        def _do_restart():
+            _t.Event().wait(1)
+            subprocess.Popen(['systemctl', 'restart', 'zdt-api', '--no-block'], start_new_session=True)
+        _t.Thread(target=_do_restart, daemon=True).start()
+        return jsonify({'success': True, 'message': 'API server restart initiated'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
