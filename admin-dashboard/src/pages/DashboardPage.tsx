@@ -251,10 +251,20 @@ export default function DashboardPage() {
               <span className="text-sm text-base-content font-mono">{data.vpn.ip}</span>
             </div>
           )}
-          <div className="py-2.5 flex justify-between">
+          <div className="py-2.5 border-b border-base-200 flex justify-between">
             <span className="text-sm text-base-content/60">Server</span>
             <span className="text-sm text-base-content font-mono">{data.vpn.server || '-'}</span>
           </div>
+          {data.ips && data.ips.length > 0 && (
+            <div className="py-2.5 flex justify-between">
+              <span className="text-sm text-base-content/60">Local IPs</span>
+              <div className="text-right">
+                {data.ips.filter((ip: string) => ip !== data.vpn?.ip).map((ip: string) => (
+                  <div key={ip} className="text-sm text-base-content font-mono">{ip}</div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
