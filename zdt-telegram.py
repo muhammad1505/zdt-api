@@ -1103,22 +1103,9 @@ def dl_confirm_callback(call):
 
     fmt = data.get('dl_format', 'audio')
     is_video = fmt == 'video'
-    cmd = ["--download-video" if is_video else "--download-audio", url]
     label = "Video" if is_video else "Audio"
-
-    # Pass format and bitrate to zdt CLI via env vars
-    extra_env = {'ZDT_DB_PATH': DB_PATH}
-    if not is_video:
-        afmt = data.get('dl_audio_format', 'm4a')
-        br = data.get('dl_bitrate', '128')
-        if afmt in AUDIO_FORMATS:
-            extra_env['AUTO_FORMAT_SPEC'] = AUDIO_FORMATS[afmt]
-        extra_env['AUTO_BITRATE'] = br
-    else:
-        vfmt = data.get('dl_video_format', 'mp4')
-        if vfmt in VIDEO_FORMATS:
-            extra_env['AUTO_VIDEO_FORMAT'] = VIDEO_FORMATS[vfmt]
-    logging.info(f"Download env: format={extra_env.get('AUTO_FORMAT_SPEC','?')} bitrate={extra_env.get('AUTO_BITRATE','?')} video_fmt={extra_env.get('AUTO_VIDEO_FORMAT','?')}")
+    afmt = data.get('dl_audio_format', '')
+    br = data.get('dl_bitrate', '')
 
     bot.edit_message_text(f"⏳ <b>Sedang Mendownload {label}...</b>\n📍 <code>{url}</code>", chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML")
     bot.answer_callback_query(call.id, f"Download {label} dimulai!")
@@ -1128,9 +1115,28 @@ def dl_confirm_callback(call):
     sent_msg = call.message
     def _task():
         try:
-            env = os.environ.copy()
-            env.update(extra_env)
-            process = _safe_popen([get_zdt_bin()] + cmd, stdout=subprocess.PIPE, text=True, bufsize=1, env=env)
+            if is_video:
+                vfmt = data.get('dl_video_format', 'mp4')
+                quality = data.get('dl_quality', '')
+                output_tpl = os.path.join(get_target_dir(), '%(title)s.%(ext)s')
+                yt_dlp_args = [YT_DLP, '-o', output_tpl, '--newline']
+                if quality:
+                    yt_dlp_args.extend(['-f', f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]'])
+                if vfmt != 'mp4':
+                    yt_dlp_args.extend(['--merge-output-format', vfmt])
+                yt_dlp_args.extend(['--', url])
+                process = _safe_popen(yt_dlp_args, stdout=subprocess.PIPE, text=True, bufsize=1)
+            else:
+                cmd = ["--download-audio", url]
+                extra_env = {'ZDT_DB_PATH': DB_PATH}
+                afmt = data.get('dl_audio_format', 'm4a')
+                br = data.get('dl_bitrate', '128')
+                if afmt in AUDIO_FORMATS:
+                    extra_env['AUTO_FORMAT_SPEC'] = AUDIO_FORMATS[afmt]
+                extra_env['AUTO_BITRATE'] = br
+                env = os.environ.copy()
+                env.update(extra_env)
+                process = _safe_popen([get_zdt_bin()] + cmd, stdout=subprocess.PIPE, text=True, bufsize=1, env=env)
             last_update = time.time()
             log_buffer = []
             ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -1179,8 +1185,8 @@ def dl_confirm_callback(call):
             else:
                 fail_url = url
                 fail_is_video = is_video
-                fail_afmt = afmt if not is_video else ''
-                fail_br = br if not is_video else ''
+                fail_afmt = data.get('dl_audio_format', '') if not is_video else ''
+                fail_br = data.get('dl_bitrate', '') if not is_video else ''
                 if not hasattr(bot, 'user_data'):
                     bot.user_data = {}
                 if chat_id not in bot.user_data:
