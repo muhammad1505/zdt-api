@@ -130,6 +130,26 @@ def init_db():
             version INTEGER PRIMARY KEY,
             migrated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS task_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued',
+            priority INTEGER NOT NULL DEFAULT 1,
+            user_id INTEGER DEFAULT NULL,
+            chat_id INTEGER DEFAULT NULL,
+            source TEXT DEFAULT 'api',
+            url TEXT DEFAULT '',
+            params TEXT DEFAULT '{}',
+            progress INTEGER DEFAULT 0,
+            progress_message TEXT DEFAULT '',
+            pid INTEGER DEFAULT NULL,
+            error_message TEXT DEFAULT '',
+            file_path TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP
+        );
     ''')
 
     # Schema migration: check current version and upgrade if needed
@@ -137,6 +157,19 @@ def init_db():
         cur_version = conn.execute('SELECT COALESCE(MAX(version), 0) FROM schema_version').fetchone()[0]
     except Exception:
         cur_version = 0
+
+    if cur_version < 2:
+        try:
+            conn.executescript('''
+                CREATE INDEX IF NOT EXISTS idx_tq_status ON task_queue(status);
+                CREATE INDEX IF NOT EXISTS idx_tq_priority ON task_queue(priority, created_at);
+                CREATE INDEX IF NOT EXISTS idx_tq_user ON task_queue(user_id, status);
+            ''')
+            conn.execute('INSERT OR REPLACE INTO schema_version (version) VALUES (2)')
+            conn.commit()
+        except Exception as e:
+            import logging
+            logging.getLogger('zdt-api').error(f'Schema migration v2 failed: {e}')
 
     if cur_version < 1:
         try:

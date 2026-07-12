@@ -203,6 +203,7 @@ def create_app():
     from routes.admin_routes import admin_bp
     from routes.download_routes import downloads_bp
     from routes.vpn_routes import vpn_bp
+    from routes.task_routes import task_bp
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -213,6 +214,11 @@ def create_app():
     app.register_blueprint(admin_bp)
     app.register_blueprint(downloads_bp)
     app.register_blueprint(vpn_bp)
+    app.register_blueprint(task_bp)
+
+    # Initialize task queue
+    from task_queue import init_queue
+    init_queue(app)
     
     # Error handlers
     @app.errorhandler(404)
