@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
 import Swal from 'sweetalert2';
-import { HardDriveUpload, RotateCw, Database, FileText, Clock } from 'lucide-react';
+import { HardDriveUpload, RotateCw, Database, FileText, Clock, Trash2 } from 'lucide-react';
 
 function toast(icon: 'success' | 'error' | 'info', title: string) {
   Swal.fire({ icon, title, toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, background: 'var(--b1)', color: 'var(--bc)', customClass: { container: '!z-[999999]' } });
@@ -16,8 +16,10 @@ function fmtSize(bytes: number) {
 
 function fmtTime(t: string) {
   if (!t) return '-';
-  const d = new Date(t + 'Z');
-  return d.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+  try {
+    const d = new Date(t + (t.includes('Z') || t.includes('+') ? '' : 'Z'));
+    return d.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+  } catch { return t; }
 }
 
 export default function BackupPage() {
@@ -41,38 +43,47 @@ export default function BackupPage() {
     try {
       const res = await api.post('/api/admin/backup');
       if (res.data.success) {
-        toast('success', 'Backup berhasil: ' + (res.data.filename || ''));
+        toast('success', 'Backup berhasil');
         fetchBackups();
       } else toast('error', res.data.message || 'Gagal backup');
     } catch (e: any) { toast('error', e.response?.data?.message || 'Gagal backup'); }
     setBackingUp(false);
   };
 
-  const restoreBackup = async (filename: string) => {
+  const restoreBackup = async (backup: any) => {
+    const path = backup.path || (backup.filename && backup.filename.startsWith('/') ? backup.filename : null);
+    if (!path) { toast('error', 'Backup path tidak diketahui'); return; }
     const res = await Swal.fire({
       title: 'Restore backup?',
-      html: `Akan merestore database dari <b>${filename}</b><br/><br/>Database saat ini akan di-backup otomatis sebelumnya.`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#f79009',
-      confirmButtonText: 'Restore',
-      cancelButtonText: 'Batal',
-      background: 'var(--b1)',
-      color: 'var(--bc)',
+      html: `Akan merestore database dari <b>${backup.filename || path}</b><br/><br/>Database saat ini akan di-backup otomatis sebelumnya.`,
+      icon: 'warning', showCancelButton: true, confirmButtonColor: '#f79009',
+      confirmButtonText: 'Restore', cancelButtonText: 'Batal',
+      background: 'var(--b1)', color: 'var(--bc)',
     });
     if (!res.isConfirmed) return;
     setRestoring(true);
     try {
-      const resp = await api.post('/api/admin/backup/restore', { filename });
-      if (resp.data.success) {
-        toast('success', 'Restore berhasil');
-        fetchBackups();
-      } else toast('error', resp.data.message || 'Gagal restore');
+      const resp = await api.post('/api/admin/backup/restore', { path });
+      if (resp.data.success) toast('success', 'Restore berhasil');
+      else toast('error', resp.data.message || 'Gagal restore');
     } catch (e: any) { toast('error', e.response?.data?.message || 'Gagal restore'); }
     setRestoring(false);
   };
 
-  const handleRestoreClick = (b: any) => restoreBackup(b.filename);
+  const deleteBackup = async (backup: any) => {
+    const filename = backup.filename || backup.path;
+    const res = await Swal.fire({
+      title: 'Hapus backup?', text: `Menghapus ${filename}`, icon: 'warning',
+      showCancelButton: true, confirmButtonColor: '#f04438', confirmButtonText: 'Hapus',
+      background: 'var(--b1)', color: 'var(--bc)',
+    });
+    if (!res.isConfirmed) return;
+    try {
+      await api.delete(`/api/admin/backup/${encodeURIComponent(filename)}`);
+      toast('success', 'Backup dihapus');
+      fetchBackups();
+    } catch (e: any) { toast('error', e.response?.data?.message || 'Gagal hapus backup'); }
+  };
 
   return (
     <div className="space-y-6">
@@ -91,7 +102,7 @@ export default function BackupPage() {
         {[
           { icon: Database, label: 'Database', desc: 'SQLite database (zdt_api.db)', color: '#465fff' },
           { icon: FileText, label: 'Configuration', desc: 'Config file (config.env)', color: '#f79009' },
-          { icon: Clock, label: 'Auto-backup', desc: 'Backup sebelum restore', color: '#12b76a' },
+          { icon: Clock, label: 'Auto-backup', desc: 'Backup otomatis sebelum restore', color: '#12b76a' },
         ].map(s => (
           <div key={s.label} className="card bg-base-100 border border-base-200 p-5">
             <div className="flex items-center gap-3 mb-2">
@@ -115,7 +126,7 @@ export default function BackupPage() {
         ) : backups.length === 0 ? (
           <div className="text-center py-10 text-sm text-base-content/60">
             <Database size={40} className="mx-auto mb-3 opacity-40" />
-            No backups yet
+            No backups yet. Click "Create Backup" to start.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -125,20 +136,24 @@ export default function BackupPage() {
                   <th className="text-xs font-semibold text-base-content/60 uppercase">Filename</th>
                   <th className="text-xs font-semibold text-base-content/60 uppercase">Size</th>
                   <th className="text-xs font-semibold text-base-content/60 uppercase">Created</th>
-                  <th className="text-xs font-semibold text-base-content/60 uppercase">Actions</th>
+                  <th className="text-xs font-semibold text-base-content/60 uppercase text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {backups.map((b, i) => (
                   <tr key={i} className="hover:bg-base-200/50 transition-colors">
-                    <td className="text-xs font-mono text-base-content">{b.filename}</td>
+                    <td className="text-xs font-mono text-base-content max-w-[300px] truncate">{b.filename || b.path || '-'}</td>
                     <td className="text-xs text-base-content/60">{fmtSize(b.size)}</td>
                     <td className="text-xs text-base-content/60 whitespace-nowrap">{fmtTime(b.created_at)}</td>
-                    <td>
-                      <button onClick={() => handleRestoreClick(b)} disabled={restoring} className="btn btn-ghost btn-xs gap-1 text-warning">
-                        <RotateCw size={12} />
-                        Restore
-                      </button>
+                    <td className="text-right">
+                      <div className="flex gap-1 justify-end">
+                        <button onClick={() => restoreBackup(b)} disabled={restoring} className="btn btn-ghost btn-xs gap-1 text-warning" title="Restore">
+                          <RotateCw size={12} /> Restore
+                        </button>
+                        <button onClick={() => deleteBackup(b)} className="btn btn-ghost btn-xs gap-1 text-error" title="Delete">
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

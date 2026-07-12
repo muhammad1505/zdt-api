@@ -13,16 +13,14 @@ export default function UpdatePage() {
   const [applying, setApplying] = useState(false);
   const [updateLog, setUpdateLog] = useState<string[]>([]);
   const [showLog, setShowLog] = useState(false);
+
   const checkUpdate = useCallback(async () => {
     setChecking(true);
     try {
       const res = await api.get('/api/update-check');
       setUpdateInfo(res.data);
-      if (res.data.update_available) {
-        toast('info', `Update ${res.data.latest_version} tersedia!`);
-      } else {
-        toast('success', 'Already up to date');
-      }
+      if (res.data.has_update) toast('info', `Update ${res.data.latest} tersedia!`);
+      else if (res.data.current) toast('success', 'Already up to date');
     } catch (e: any) { toast('error', e.response?.data?.message || 'Gagal cek update'); }
     setChecking(false);
   }, []);
@@ -40,30 +38,19 @@ export default function UpdatePage() {
     const res = await Swal.fire({
       title: 'Apply update?',
       html: 'Akan menjalankan:<br/><b>git pull</b> → <b>pip install</b> → <b>restart service</b>',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#465fff',
-      confirmButtonText: 'Apply & Restart',
-      cancelButtonText: 'Batal',
-      background: 'var(--b1)',
-      color: 'var(--bc)',
+      icon: 'warning', showCancelButton: true, confirmButtonColor: '#465fff',
+      confirmButtonText: 'Apply & Restart', cancelButtonText: 'Batal',
+      background: 'var(--b1)', color: 'var(--bc)',
     });
     if (!res.isConfirmed) return;
-    setApplying(true);
-    setShowLog(true);
-    setUpdateLog(['Memulai update...']);
+    setApplying(true); setShowLog(true); setUpdateLog(['Memulai update...']);
     try {
       const resp = await api.post('/api/update-apply', {}, { timeout: 120000 });
       if (resp.data.success) {
         setUpdateLog(prev => [...prev, '✅ Update applied, server restarting...']);
         toast('success', 'Update applied, server restarting...');
-      } else {
-        setUpdateLog(prev => [...prev, `❌ ${resp.data.message || 'Gagal'}`]);
-        toast('error', resp.data.message || 'Gagal update');
-      }
-    } catch (e: any) {
-      setUpdateLog(prev => [...prev, `❌ ${e.response?.data?.message || e.message}`]);
-    }
+      } else { setUpdateLog(prev => [...prev, `❌ ${resp.data.message || 'Gagal'}`]); toast('error', resp.data.message || 'Gagal update'); }
+    } catch (e: any) { setUpdateLog(prev => [...prev, `❌ ${e.response?.data?.message || e.message}`]); }
     setApplying(false);
     setTimeout(() => fetchLog(), 2000);
   };
@@ -92,42 +79,38 @@ export default function UpdatePage() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm text-base-content/60 mb-1">Current Version</div>
-                <div className="text-2xl font-bold text-base-content">{updateInfo.current_version || '-'}</div>
+                <div className="text-2xl font-bold text-base-content">{updateInfo.current || '-'}</div>
               </div>
               <div className="text-right">
                 <div className="text-sm text-base-content/60 mb-1">Latest Version</div>
-                <div className="text-2xl font-bold" style={{ color: updateInfo.update_available ? '#f79009' : '#12b76a' }}>
-                  {updateInfo.latest_version || '-'}
+                <div className="text-2xl font-bold" style={{ color: updateInfo.has_update ? '#f79009' : '#12b76a' }}>
+                  {updateInfo.latest || '-'}
                 </div>
               </div>
             </div>
 
-            {updateInfo.update_available && (
+            {updateInfo.has_update && (
               <div className="bg-warning/10 border border-warning/30 rounded-xl p-4">
                 <div className="flex items-start gap-3">
                   <ArrowUpCircle size={20} className="text-warning shrink-0 mt-0.5" />
                   <div>
-                    <div className="text-sm font-medium text-base-content">Update available: {updateInfo.latest_version}</div>
-                    {updateInfo.release_url && (
-                      <a href={updateInfo.release_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline block mt-1">
-                        View release →
-                      </a>
-                    )}
+                    <div className="text-sm font-medium text-base-content">Update available: {updateInfo.latest}</div>
+                    <p className="text-xs text-base-content/60 mt-1">Versi server saat ini: {updateInfo.current}. Jalankan apply update untuk memperbarui.</p>
                   </div>
                 </div>
               </div>
             )}
 
-            {!updateInfo.update_available && (
+            {!updateInfo.has_update && updateInfo.current && (
               <div className="bg-success/10 border border-success/30 rounded-xl p-4">
                 <div className="flex items-center gap-3">
                   <CheckCircle2 size={20} className="text-success shrink-0" />
-                  <span className="text-sm text-base-content">Already up to date</span>
+                  <span className="text-sm text-base-content">Already up to date (v{updateInfo.current})</span>
                 </div>
               </div>
             )}
 
-            {updateInfo.update_available && !applying && (
+            {updateInfo.has_update && !applying && (
               <button onClick={applyUpdate} className="btn btn-primary gap-2 w-full">
                 <Download size={16} /> Apply Update & Restart
               </button>
@@ -157,10 +140,8 @@ export default function UpdatePage() {
               <span className="text-base-content/60">No log entries yet.</span>
             ) : updateLog.map((line, i) => (
               <div key={i} className={
-                line.includes('✅') ? 'text-success'
-                : line.includes('❌') ? 'text-error'
-                : line.includes('Memulai') || line.includes('Applying') ? 'text-primary'
-                : 'text-base-content'
+                line.includes('✅') ? 'text-success' : line.includes('❌') ? 'text-error'
+                : line.includes('Memulai') || line.includes('Applying') ? 'text-primary' : 'text-base-content'
               }>{line}</div>
             ))}
           </div>

@@ -2,7 +2,7 @@ OPENAPI_SPEC = {
     "openapi": "3.0.3",
     "info": {
         "title": "ZDT API Server",
-        "version": "1.3.0",
+        "version": "2.0.0",
         "description": "API untuk mengelola download media, file, pengaturan, monitoring server, task queue, VPN, backup, dan plugin ZDT.\n\n## Auth\n- **X-API-Key**: Smart API Key (Base64) atau `key_id|secret` untuk mobile app\n- **Bearer Token**: JWT untuk admin dashboard (dapat refresh token)\n- **Basic Auth**: username:password untuk kompatibilitas legacy\n\nDokumentasi interaktif: [Swagger UI](/api/docs)",
         "contact": {"name": "ZDT Project"}
     },

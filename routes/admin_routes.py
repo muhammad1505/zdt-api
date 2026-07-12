@@ -870,6 +870,23 @@ def restore_backup():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@admin_bp.route('/api/admin/backup/<path:filename>', methods=['DELETE'])
+@requires_admin
+def delete_backup(filename):
+    try:
+        backup_dir = os.path.join(os.path.dirname(get_db_path()), 'backups')
+        # Prevent path traversal
+        safe_path = os.path.normpath(os.path.join(backup_dir, os.path.basename(filename)))
+        if not safe_path.startswith(os.path.normpath(backup_dir)):
+            return jsonify({'success': False, 'message': 'Invalid path'}), 400
+        if not os.path.isfile(safe_path):
+            return jsonify({'success': False, 'message': 'File not found'}), 404
+        os.remove(safe_path)
+        return jsonify({'success': True, 'message': 'Backup deleted'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 UPDATE_LOG_PATH = '/tmp/zdt_update.log'
 
 def _get_remote_version() -> str:
