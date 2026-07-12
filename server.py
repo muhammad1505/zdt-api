@@ -100,7 +100,7 @@ def create_app():
         """
         if request.method in ('GET', 'HEAD', 'OPTIONS'):
             return None
-        if request.path in ('/api/login', '/api/verify-key', '/api/health'):
+        if request.path in ('/api/login', '/api/verify-key', '/api/health', '/api/auth/refresh'):
             return None
 
         csrf_cookie = request.cookies.get('csrf_token')

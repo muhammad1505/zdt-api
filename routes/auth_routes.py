@@ -1,11 +1,63 @@
 from flask import Blueprint, request, jsonify, g
 import time
+import secrets
+import threading
 
 _start_time = time.time()
 
 from auth import requires_auth, generate_bearer_token
 from database import verify_user, parse_smart_api_key, validate_api_key, get_connection
 from config import config
+
+# === Brute-force protection ===
+_login_attempts: dict[str, list[float]] = {}
+_login_lock = threading.Lock()
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW = 300  # 5 minutes
+LOGIN_BLOCK_DURATION = 900  # 15 minutes
+_login_blocked: dict[str, float] = {}
+
+def _check_login_rate_limit(ip: str) -> bool:
+    now = time.time()
+    with _login_lock:
+        if ip in _login_blocked:
+            if now - _login_blocked[ip] < LOGIN_BLOCK_DURATION:
+                return False
+            del _login_blocked[ip]
+        attempts = [t for t in _login_attempts.get(ip, []) if now - t < LOGIN_WINDOW]
+        if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+            _login_blocked[ip] = now
+            del _login_attempts[ip]
+            return False
+        _login_attempts[ip] = attempts
+    return True
+
+def _record_login_attempt(ip: str, success: bool):
+    now = time.time()
+    with _login_lock:
+        if success:
+            _login_attempts.pop(ip, None)
+            _login_blocked.pop(ip, None)
+        else:
+            if ip not in _login_attempts:
+                _login_attempts[ip] = []
+            _login_attempts[ip].append(now)
+
+# === Refresh token store ===
+REFRESH_TOKENS: dict[str, dict] = {}
+_refresh_lock = threading.Lock()
+
+def _generate_refresh_token(user_id: int, username: str, role: str) -> str:
+    token = 'zdt_rt_' + secrets.token_hex(32)
+    with _refresh_lock:
+        REFRESH_TOKENS[token] = {
+            'user_id': user_id,
+            'username': username,
+            'role': role,
+            'created_at': time.time(),
+            'expires_at': time.time() + 86400 * 30  # 30 days
+        }
+    return token
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -44,7 +96,11 @@ def get_current_user():
 
 @auth_bp.route('/api/login', methods=['POST'])
 def login():
-    """Admin login - returns Bearer token."""
+    """Admin login - returns Bearer token + refresh token."""
+    ip = request.remote_addr or 'unknown'
+    if not _check_login_rate_limit(ip):
+        return jsonify({'error': 'Too many login attempts. Try again in 15 minutes.'}), 429
+
     data = request.get_json(silent=True) or {}
     username = data.get('username', '')
     password = data.get('password', '')
@@ -54,24 +110,53 @@ def login():
     
     user = verify_user(username, password)
     if not user:
-        # Fallback to config.env credentials
         if username == config.get_web_user() and password == config.get_web_pass():
+            _record_login_attempt(ip, True)
             token = generate_bearer_token(0, username, 'admin')
+            refresh = _generate_refresh_token(0, username, 'admin')
             return jsonify({
                 'token': token,
+                'refresh_token': refresh,
                 'user': {'username': username, 'role': 'admin', 'id': 0}
             })
+        _record_login_attempt(ip, False)
         return jsonify({'error': 'Invalid credentials'}), 401
     
+    _record_login_attempt(ip, True)
     token = generate_bearer_token(user['id'], user['username'], user['role'])
+    refresh = _generate_refresh_token(user['id'], user['username'], user['role'])
     return jsonify({
         'token': token,
+        'refresh_token': refresh,
         'user': {
             'id': user['id'],
             'username': user['username'],
             'role': user['role'],
             'label': user.get('label', '')
         }
+    })
+
+
+@auth_bp.route('/api/auth/refresh', methods=['POST'])
+def refresh_token():
+    """Exchange a refresh token for a new Bearer token."""
+    data = request.get_json(silent=True) or {}
+    refresh = data.get('refresh_token', '')
+    if not refresh:
+        return jsonify({'error': 'Refresh token required'}), 400
+    
+    with _refresh_lock:
+        stored = REFRESH_TOKENS.pop(refresh, None)
+    if not stored:
+        return jsonify({'error': 'Invalid or expired refresh token'}), 401
+    if time.time() > stored['expires_at']:
+        return jsonify({'error': 'Refresh token expired'}), 401
+    
+    new_token = generate_bearer_token(stored['user_id'], stored['username'], stored['role'])
+    new_refresh = _generate_refresh_token(stored['user_id'], stored['username'], stored['role'])
+    return jsonify({
+        'token': new_token,
+        'refresh_token': new_refresh
     })
 
 
