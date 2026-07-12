@@ -265,6 +265,18 @@ def create_app():
         
         logger.info(f'Admin dashboard served at /admin/ from {admin_dist}')
     
+    # API Documentation
+    @app.route('/api/openapi.json')
+    def openapi_spec():
+        from flask import jsonify
+        from openapi_spec import OPENAPI_SPEC
+        return jsonify(OPENAPI_SPEC)
+
+    @app.route('/api/docs')
+    def api_docs():
+        from flask import render_template
+        return render_template('swagger.html')
+
     # Graceful shutdown handler
     shutdown_event = threading.Event()
 
