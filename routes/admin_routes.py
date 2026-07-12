@@ -383,6 +383,20 @@ def save_notif_settings():
         return jsonify({'error': str(e)}), 500
 
 
+@admin_bp.route('/api/admin/metrics/history', methods=['GET'])
+@requires_admin
+def metrics_history():
+    try:
+        hours = request.args.get('hours', 24, type=int)
+        hours = min(max(hours, 1), 168)
+        from database import get_db_path
+        from metrics import get_history
+        data = get_history(get_db_path(), hours)
+        return jsonify({'success': True, 'metrics': data})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @admin_bp.route('/api/admin/notifications', methods=['GET'])
 @requires_admin
 def notifications():
@@ -918,6 +932,40 @@ def get_update_log():
         return jsonify({'success': True, 'log': content})
     return jsonify({'success': True, 'log': ''})
 
+
+# === PLUGIN MANAGEMENT ===
+
+@admin_bp.route('/api/admin/plugins', methods=['GET'])
+@requires_admin
+def plugin_list():
+    try:
+        from plugin_system import discover, _plugins
+        plugins = discover()
+        return jsonify({'success': True, 'plugins': plugins})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/plugins/<name>/load', methods=['POST'])
+@requires_admin
+def plugin_load(name):
+    try:
+        from plugin_system import load
+        ok = load(name)
+        return jsonify({'success': ok, 'message': f'Plugin {name} loaded' if ok else 'Failed to load'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/plugins/<name>/unload', methods=['POST'])
+@requires_admin
+def plugin_unload(name):
+    try:
+        from plugin_system import unload
+        ok = unload(name)
+        return jsonify({'success': ok, 'message': f'Plugin {name} unloaded' if ok else 'Failed to unload'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # === SERVICE MANAGEMENT ===
 

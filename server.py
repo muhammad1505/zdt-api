@@ -223,6 +223,17 @@ def create_app():
     # Initialize event system
     from events import init_events
     init_events()
+
+    # Initialize metrics collector
+    from metrics import start_collector
+    start_collector(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'zdt_api.db'))
+
+    # Initialize plugin system
+    from plugin_system import set_plugins_dir, load_all
+    plugins_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'plugins')
+    os.makedirs(plugins_dir, exist_ok=True)
+    set_plugins_dir(plugins_dir)
+    load_all()
     
     # Error handlers
     @app.errorhandler(404)
