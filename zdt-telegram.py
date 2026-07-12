@@ -549,6 +549,8 @@ Chat: {history_context}"""
                                         # Using unbuffered output trick via stdbuf or directly reading
                                         bg_env = os.environ.copy()
                                         bg_env['ZDT_DB_PATH'] = DB_PATH
+                                        bg_env['AUTO_FORMAT_SPEC'] = '2'
+                                        bg_env['AUTO_BITRATE'] = '128'
                                         process = _safe_popen([get_zdt_bin()] + cmd_args, stdout=subprocess.PIPE, text=True, bufsize=1, env=bg_env)
                                             
                                         last_update = time.time()
@@ -1079,6 +1081,7 @@ def dl_confirm_callback(call):
         if afmt in AUDIO_FORMATS:
             extra_env['AUTO_FORMAT_SPEC'] = AUDIO_FORMATS[afmt]
         extra_env['AUTO_BITRATE'] = br
+    logging.info(f"Download env: format={extra_env.get('AUTO_FORMAT_SPEC','?')} bitrate={extra_env.get('AUTO_BITRATE','?')}")
 
     bot.edit_message_text(f"⏳ <b>Sedang Mendownload {label}...</b>\n📍 <code>{url}</code>", chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML")
     bot.answer_callback_query(call.id, f"Download {label} dimulai!")
@@ -1135,12 +1138,7 @@ def dl_confirm_callback(call):
                 # Record with real file info (title from filename, file size)
                 _record_download(url, fmt, file_path=dl_path)
                 # Send post-download options
-                dl_markup = InlineKeyboardMarkup(row_width=2)
-                dl_markup.add(
-                    InlineKeyboardButton("🎤 Sync Lirik", callback_data="cmd_sync"),
-                    InlineKeyboardButton("✂️ Pisah Vokal", callback_data="cmd_demucs"),
-                )
-                bot.send_message(chat_id, "📌 *Aksi setelah download:*\nPilih opsi tambahan di bawah ini.", parse_mode="Markdown", reply_markup=dl_markup)
+                _send_post_dl_options(chat_id)
             else:
                 bot.edit_message_text(f"❌ <b>Download {label} gagal.</b>\n\n<pre>{html.escape(final_context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML")
         except Exception as e:
@@ -1148,6 +1146,17 @@ def dl_confirm_callback(call):
 
     if not _safe_submit_task(_task):
         bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=chat_id, message_id=sent_msg.message_id)
+
+def _send_post_dl_options(chat_id, extra_text=""):
+    dl_markup = InlineKeyboardMarkup(row_width=2)
+    dl_markup.add(
+        InlineKeyboardButton("🎤 Sync Lirik", callback_data="cmd_sync"),
+        InlineKeyboardButton("✂️ Pisah Vokal", callback_data="cmd_demucs"),
+    )
+    text = "📌 *Aksi setelah download:*\nPilih opsi tambahan di bawah ini."
+    if extra_text:
+        text = extra_text + "\n\n" + text
+    bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=dl_markup)
 
 @bot.callback_query_handler(func=lambda call: call.data in ('cmd_sync', 'cmd_demucs'))
 def post_download_callback(call):
@@ -1173,6 +1182,7 @@ def post_download_callback(call):
                     bot.edit_message_text(f"✅ <b>Sync Lirik berhasil</b>\n📄 <code>{os.path.basename(lrc_path)}</code>", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
                 else:
                     bot.edit_message_text(f"❌ <b>Sync Lirik gagal</b> - Lirik tidak ditemukan untuk: {query}", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
+                _send_post_dl_options(chat_id, f"📍 <code>{os.path.basename(filepath)}</code>")
             except ImportError:
                 bot.edit_message_text("❌ Module syncedlyrics tidak terinstall.", chat_id=chat_id, message_id=msg.message_id)
             except Exception as e:
@@ -1212,6 +1222,7 @@ def post_download_callback(call):
                     bot.edit_message_text(f"✅ <b>Pisah Vokal berhasil</b>\n📍 <code>{name_no_ext}_vocals / _novokal</code>", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
                 else:
                     bot.edit_message_text(f"❌ <b>Pisah Vokal gagal</b>", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
+                _send_post_dl_options(chat_id, f"📍 <code>{os.path.basename(filepath)}</code>")
             except Exception as e:
                 try:
                     bot.edit_message_text(f"❌ Error: {e}", chat_id=chat_id, message_id=msg.message_id)
