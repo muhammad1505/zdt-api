@@ -179,6 +179,26 @@ class TaskManager:
             'total': queued + running + completed + failed + cancelled
         }
 
+    def delete_task(self, task_id: int) -> bool:
+        conn = self._get_conn()
+        row = conn.execute('SELECT id FROM task_queue WHERE id = ?', (task_id,)).fetchone()
+        if not row:
+            conn.close()
+            return False
+        conn.execute('DELETE FROM task_queue WHERE id = ?', (task_id,))
+        conn.commit()
+        conn.close()
+        self._notify_task_event(task_id, 'deleted')
+        return True
+
+    def _notify_task_event(self, task_id: int, event_type: str):
+        try:
+            from events import get_event_bus
+            bus = get_event_bus()
+            bus.emit('task_update', {'id': task_id, 'type': event_type, 'status': event_type})
+        except Exception:
+            pass
+
     def cleanup_old(self, hours: int = 72):
         conn = self._get_conn()
         conn.execute(

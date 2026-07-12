@@ -101,11 +101,11 @@ def queue_stats():
 def delete_task(task_id):
     try:
         from task_queue import get_manager
-        conn = __import__('sqlite3').connect(getattr(__import__('database', fromlist=['get_db_path']), 'get_db_path')())
-        conn.execute('DELETE FROM task_queue WHERE id = ?', (task_id,))
-        conn.commit()
-        conn.close()
-        return jsonify({'success': True, 'message': 'Task deleted'})
+        mgr = get_manager()
+        ok = mgr.delete_task(task_id)
+        if ok:
+            return jsonify({'success': True, 'message': 'Task deleted'})
+        return jsonify({'success': False, 'error': 'Task not found'}), 404
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
