@@ -585,58 +585,85 @@ def _vpn_write_l2tp(cmd: str) -> tuple[bool, str]:
             return False, str(e)
     return False, 'Permission denied and no sudo fallback available'
 
-def _vpn_wait_ppp(timeout: int, expect_up: bool) -> bool:
+def _vpn_wait_ppp(timeout: int, expect_up: bool) -> tuple[bool, str]:
     """Wait for ppp0 to appear (expect_up=True) or disappear (expect_up=False)."""
-    import time
     for _ in range(timeout):
         time.sleep(1)
         r = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
                            capture_output=True, text=True, timeout=5)
         up = r.returncode == 0
         if up == expect_up:
-            return True
-    return False
+            ip = ''
+            if up:
+                for line in r.stdout.split('\n'):
+                    if 'inet ' in line:
+                        ip = line.strip().split()[1]
+            return True, ip
+    # Check why it failed
+    reason = ''
+    if expect_up:
+        r = subprocess.run(['ping', '-c1', '-W2', config.get('VPN_SERVER', '')], capture_output=True, text=True, timeout=5)
+        if r.returncode != 0:
+            reason = f'Server {config.get("VPN_SERVER", "")} unreachable'
+        else:
+            reason = 'Server reachable but ppp0 did not come up (check VPN credentials)'
+    return False, reason
 
 def _vpn_ensure_xl2tpd() -> tuple[bool, str]:
-    """Make sure xl2tpd service is running."""
+    """Make sure xl2tpd service is running. Uses sudo if needed."""
     try:
         r = subprocess.run(['pgrep', '-x', 'xl2tpd'], capture_output=True, timeout=3)
         if r.returncode == 0:
             return True, ''
     except Exception:
         pass
-    # Try systemctl start (may fail with NoNewPrivs, but worth a shot)
+    # Try systemctl start directly
     try:
-        subprocess.run(['systemctl', 'start', 'xl2tpd'], capture_output=True, timeout=10)
+        r = subprocess.run(['systemctl', 'start', 'xl2tpd'], capture_output=True, timeout=10)
+        if r.returncode == 0:
+            time.sleep(1)
+            if subprocess.run(['pgrep', '-x', 'xl2tpd'], capture_output=True, timeout=3).returncode == 0:
+                return True, ''
     except Exception:
         pass
-    time.sleep(1)
+    # Try with sudo
+    try:
+        r = subprocess.run(['sudo', 'systemctl', 'start', 'xl2tpd'], capture_output=True, timeout=10)
+        if r.returncode == 0:
+            time.sleep(1)
+    except Exception:
+        pass
     try:
         r = subprocess.run(['pgrep', '-x', 'xl2tpd'], capture_output=True, timeout=3)
         if r.returncode == 0:
             return True, ''
     except Exception:
         pass
-    return False, 'xl2tpd service not running and could not be started (try: sudo systemctl start xl2tpd)'
+    return False, 'xl2tpd service not running. Coba: sudo systemctl start xl2tpd'
 
 
 @admin_bp.route('/api/admin/vpn/connect', methods=['POST'])
 @requires_admin
 def vpn_connect():
     try:
-        import time
-        # If already connected, return success
-        r = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
-                           capture_output=True, text=True, timeout=5)
-        if r.returncode == 0:
+        ppp_check = subprocess.run(['ip', '-4', 'addr', 'show', 'ppp0'],
+                                   capture_output=True, text=True, timeout=5)
+        if ppp_check.returncode == 0:
             return jsonify({'success': True, 'message': 'Already connected'})
+
+        # Pre-check server reachability
+        server = config.get('VPN_SERVER', '')
+        if server:
+            ping = subprocess.run(['ping', '-c1', '-W3', server], capture_output=True, timeout=5)
+            if ping.returncode != 0:
+                log_vpn_event('connect', 'failed', f'Server {server} unreachable')
+                return jsonify({'error': f'Server VPN {server} tidak dapat dijangkau. Cek koneksi internet atau VPN server.'}), 502
 
         ok, err = _vpn_ensure_xl2tpd()
         if not ok:
             log_vpn_event('connect', 'failed', err)
             return jsonify({'error': err}), 500
 
-        # Disconnect first to clear stale session
         _vpn_write_l2tp('d')
         time.sleep(1)
 
@@ -645,12 +672,13 @@ def vpn_connect():
             log_vpn_event('connect', 'failed', err)
             return jsonify({'error': err}), 500
 
-        if _vpn_wait_ppp(15, True):
-            log_vpn_event('connect', 'success', 'VPN connected')
-            return jsonify({'success': True, 'message': 'VPN connected'})
+        ok, info = _vpn_wait_ppp(30, True)
+        if ok:
+            log_vpn_event('connect', 'success', f'VPN connected, IP: {info}')
+            return jsonify({'success': True, 'message': 'VPN connected', 'ip': info})
 
-        log_vpn_event('connect', 'failed', 'ppp0 did not appear after 15s')
-        return jsonify({'error': 'ppp0 interface did not appear after 15 seconds'}), 500
+        log_vpn_event('connect', 'failed', f'ppp0 not up after 30s: {info}')
+        return jsonify({'error': f'Koneksi VPN gagal: {info}'}), 502
     except Exception as e:
         log_vpn_event('connect', 'failed', str(e))
         return jsonify({'error': str(e)}), 500
@@ -675,12 +703,13 @@ def vpn_disconnect():
         except Exception:
             pass
 
-        if _vpn_wait_ppp(10, False):
+        ok, _ = _vpn_wait_ppp(10, False)
+        if ok:
             log_vpn_event('disconnect', 'success', 'VPN disconnected')
             return jsonify({'success': True, 'message': 'VPN disconnected'})
 
         log_vpn_event('disconnect', 'failed', 'ppp0 still present after 10s')
-        return jsonify({'error': 'ppp0 interface still present after 10 seconds'}), 500
+        return jsonify({'error': 'Gagal memutus VPN, ppp0 masih aktif'}), 500
     except Exception as e:
         log_vpn_event('disconnect', 'failed', str(e))
         return jsonify({'error': str(e)}), 500
@@ -707,12 +736,13 @@ def vpn_restart():
             log_vpn_event('restart', 'failed', err)
             return jsonify({'error': err}), 500
 
-        if _vpn_wait_ppp(15, True):
-            log_vpn_event('restart', 'success', 'VPN restarted')
-            return jsonify({'success': True, 'message': 'VPN restarted'})
+        ok, info = _vpn_wait_ppp(30, True)
+        if ok:
+            log_vpn_event('restart', 'success', f'VPN restarted, IP: {info}')
+            return jsonify({'success': True, 'message': 'VPN restarted', 'ip': info})
 
-        log_vpn_event('restart', 'failed', 'ppp0 did not appear after restart')
-        return jsonify({'error': 'ppp0 did not appear after restart'}), 500
+        log_vpn_event('restart', 'failed', f'ppp0 not up after restart: {info}')
+        return jsonify({'error': f'Gagal restart VPN: {info}'}), 502
     except Exception as e:
         log_vpn_event('restart', 'failed', str(e))
         return jsonify({'error': str(e)}), 500
