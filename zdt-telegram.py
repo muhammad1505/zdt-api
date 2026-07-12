@@ -680,18 +680,11 @@ Chat: {history_context}"""
                                 import re
                                 # Handle ytsearch1: queries for video
                                 if url.startswith("ytsearch1:"):
-                                    search_query = url.replace("ytsearch1:", "")
-                                    sent_msg = bot.reply_to(message, f"🔍 <b>Mencari & mendownload video...</b>\nKata kunci: <code>{_html_mod.escape(search_query)}</code>", parse_mode="HTML")
                                     resolved = _resolve_ytsearch(url)
                                     if resolved:
-                                        url = resolved
-                                        bot.edit_message_text(f"⏳ <b>Sedang Mendownload Video...</b>\n📍 <code>{url}</code>", chat_id=sent_msg.chat.id, message_id=sent_msg.message_id, parse_mode="HTML")
-                                        run_bg_task(["--download-video", url], "Video berhasil di-download!", sent_msg)
+                                        start_dl_flow(message, resolved)
                                     else:
-                                        try:
-                                            bot.edit_message_text("❌ Tidak ditemukan hasil untuk pencarian tersebut.", chat_id=sent_msg.chat.id, message_id=sent_msg.message_id)
-                                        except Exception:
-                                            bot.reply_to(message, "❌ Tidak ditemukan hasil untuk pencarian tersebut.")
+                                        bot.reply_to(message, "❌ Tidak ditemukan hasil untuk pencarian tersebut.")
                                     return
                                 # Sanitasi URL: hanya izinkan http/https URLs yang valid
                                 urls = re.findall(r'https?://[^\s]+', url)
@@ -699,8 +692,7 @@ Chat: {history_context}"""
                                     bot.reply_to(message, "❌ URL tidak valid untuk download video.")
                                     return
                                 url = urls[0]
-                                sent_msg = bot.reply_to(message, f"⏳ <b>Sedang Mendownload Video...</b>\n📍 <code>Server</code> memproses link.", parse_mode="HTML")
-                                run_bg_task(["--download-video", url], "Video berhasil di-download!", sent_msg)
+                                start_dl_flow(message, url)
                             elif action.startswith("cari youtube"):
                                 query = action.replace("cari youtube", "").strip()
                                 # Batasi panjang query untuk cegah abuse
