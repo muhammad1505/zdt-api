@@ -1152,12 +1152,130 @@ def dl_confirm_callback(call):
                 # Send post-download options
                 _send_post_dl_options(chat_id)
             else:
-                bot.edit_message_text(f"❌ <b>Download {label} gagal.</b>\n\n<pre>{html.escape(final_context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML")
+                fail_url = url
+                fail_is_video = is_video
+                fail_afmt = afmt if not is_video else ''
+                fail_br = br if not is_video else ''
+                if not hasattr(bot, 'user_data'):
+                    bot.user_data = {}
+                if chat_id not in bot.user_data:
+                    bot.user_data[chat_id] = {}
+                bot.user_data[chat_id]['dl_retry'] = {'url': fail_url, 'is_video': fail_is_video, 'afmt': fail_afmt, 'br': fail_br}
+                markup = InlineKeyboardMarkup()
+                markup.add(_retry_button('dl_retry'))
+                bot.edit_message_text(f"❌ <b>Download {label} gagal.</b>\n\n<pre>{html.escape(final_context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML", reply_markup=markup)
         except Exception as e:
             bot.edit_message_text(f"❌ {_friendly_error(e)}", chat_id=chat_id, message_id=sent_msg.message_id)
 
     if not _safe_submit_task(_task):
         bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=chat_id, message_id=sent_msg.message_id)
+
+def _retry_button(data_key):
+    return InlineKeyboardButton("🔄 Coba Lagi", callback_data=f"retry:{data_key}")
+
+def _show_retry(chat_id, msg_id, data_key, fail_text=""):
+    """Show failure message with retry button."""
+    markup = InlineKeyboardMarkup()
+    markup.add(_retry_button(data_key))
+    bot.edit_message_text(f"❌ {fail_text}", chat_id=chat_id, message_id=msg_id, reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('retry:'))
+def retry_callback(call):
+    chat_id = call.message.chat.id
+    data_key = call.data.split(':', 1)[1]
+    data = getattr(bot, 'user_data', {}).get(chat_id, {}).get(data_key)
+    if not data:
+        bot.answer_callback_query(call.id, "Sesi retry sudah kadaluarsa.")
+        return
+    bot.answer_callback_query(call.id, "Mengulang proses...")
+    if data_key == 'dl_retry':
+        url = data.get('url')
+        if not url:
+            bot.edit_message_text("❌ URL tidak tersimpan.", chat_id=chat_id, message_id=call.message.message_id)
+            return
+        start_dl_flow(call.message, url, via_search=False)
+    elif data_key == 'demucs_retry':
+        filepath = data.get('filepath')
+        if filepath and os.path.exists(filepath):
+            bot.edit_message_text(f"⏳ <b>Pisah Vokal (Demucs)</b>\n📍 <code>{os.path.basename(filepath)}</code>", chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML")
+            _run_demucs(chat_id, call.message.message_id, filepath)
+        else:
+            bot.edit_message_text("❌ File sudah tidak ada.", chat_id=chat_id, message_id=call.message.message_id)
+    elif data_key == 'sync_retry':
+        filepath = data.get('filepath')
+        if filepath and os.path.exists(filepath):
+            bot.edit_message_text(f"⏳ <b>Sync Lirik</b>\n📍 <code>{os.path.basename(filepath)}</code>", chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML")
+            _run_sync(chat_id, call.message.message_id, filepath)
+        else:
+            bot.edit_message_text("❌ File sudah tidak ada.", chat_id=chat_id, message_id=call.message.message_id)
+
+def _run_sync(chat_id, msg_id, filepath):
+    try:
+        import syncedlyrics
+        filename_noext = os.path.splitext(os.path.basename(filepath))[0]
+        lrc_path = os.path.splitext(filepath)[0] + '.lrc'
+        query = re.sub(r'\s*\([^)]*\)\s*', '', filename_noext)
+        query = re.sub(r'\s*\[[^]]*\]\s*', '', query)
+        query = re.sub(r'\s*-\s*', ' ', query).strip()
+        lrc = syncedlyrics.search(query, plain_only=True, save_path=lrc_path)
+        if lrc:
+            bot.edit_message_text(f"✅ <b>Sync Lirik berhasil</b>\n📄 <code>{os.path.basename(lrc_path)}</code>", chat_id=chat_id, message_id=msg_id, parse_mode="HTML")
+        else:
+            if not hasattr(bot, 'user_data'):
+                bot.user_data = {}
+            if chat_id not in bot.user_data:
+                bot.user_data[chat_id] = {}
+            bot.user_data[chat_id]['sync_retry'] = {'filepath': filepath, 'query': query}
+            _show_retry(chat_id, msg_id, 'sync_retry', f'<b>Sync Lirik gagal</b>\n📍 <code>{os.path.basename(filepath)}</code>')
+            return
+        _send_post_dl_options(chat_id, f"📍 <code>{os.path.basename(filepath)}</code>")
+    except ImportError:
+        bot.edit_message_text("❌ Module syncedlyrics tidak terinstall.", chat_id=chat_id, message_id=msg_id)
+    except Exception as e:
+        bot.edit_message_text(f"❌ {_friendly_error(e)}", chat_id=chat_id, message_id=msg_id)
+
+def _run_demucs(chat_id, msg_id, filepath):
+    try:
+        demucs_bin = ZdtPaths.get_demucs_bin()
+        if not os.path.exists(demucs_bin):
+            demucs_bin = shutil.which("demucs")
+        if not demucs_bin:
+            bot.edit_message_text("❌ Demucs AI belum terinstal.", chat_id=chat_id, message_id=msg_id)
+            return
+        target_dir = os.path.dirname(filepath)
+        cmd_args = [demucs_bin, "--two-stems=vocals", "-o", target_dir, filepath]
+        process = _safe_popen(cmd_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        last_update = time.time()
+        log_buffer = []
+        for line in iter(process.stdout.readline, ''):
+            if not line: break
+            log_buffer.append(line.strip())
+            log_buffer = log_buffer[-5:]
+            if time.time() - last_update > 3.0:
+                import html
+                try:
+                    bot.edit_message_text(f"⏳ <b>Pisah Vokal</b>\n<pre>{html.escape(chr(10).join(log_buffer))}</pre>", chat_id=chat_id, message_id=msg_id, parse_mode="HTML")
+                except Exception:
+                    pass
+                last_update = time.time()
+        process.wait()
+        if process.returncode == 0:
+            name_no_ext = os.path.splitext(os.path.basename(filepath))[0]
+            bot.edit_message_text(f"✅ <b>Pisah Vokal berhasil</b>\n📍 <code>{name_no_ext}_vocals / _novokal</code>", chat_id=chat_id, message_id=msg_id, parse_mode="HTML")
+        else:
+            if not hasattr(bot, 'user_data'):
+                bot.user_data = {}
+            if chat_id not in bot.user_data:
+                bot.user_data[chat_id] = {}
+            bot.user_data[chat_id]['demucs_retry'] = {'filepath': filepath}
+            _show_retry(chat_id, msg_id, 'demucs_retry', f'<b>Pisah Vokal gagal</b>\n📍 <code>{os.path.basename(filepath)}</code>')
+            return
+        _send_post_dl_options(chat_id, f"📍 <code>{os.path.basename(filepath)}</code>")
+    except Exception as e:
+        try:
+            bot.edit_message_text(f"❌ {_friendly_error(e)}", chat_id=chat_id, message_id=msg_id)
+        except Exception:
+            bot.send_message(chat_id, f"❌ {_friendly_error(e)}")
 
 def _send_post_dl_options(chat_id, extra_text=""):
     dl_markup = InlineKeyboardMarkup(row_width=2)
@@ -1181,70 +1299,13 @@ def post_download_callback(call):
     if call.data == 'cmd_sync':
         bot.answer_callback_query(call.id, "Sync lirik...")
         msg = bot.send_message(chat_id, f"⏳ <b>Sync Lirik</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
-        def _sync():
-            try:
-                import syncedlyrics
-                filename_noext = os.path.splitext(os.path.basename(filepath))[0]
-                lrc_path = os.path.splitext(filepath)[0] + '.lrc'
-                query = re.sub(r'\s*\([^)]*\)\s*', '', filename_noext)
-                query = re.sub(r'\s*\[[^]]*\]\s*', '', query)
-                query = re.sub(r'\s*-\s*', ' ', query).strip()
-                lrc = syncedlyrics.search(query, plain_only=True, save_path=lrc_path)
-                if lrc:
-                    bot.edit_message_text(f"✅ <b>Sync Lirik berhasil</b>\n📄 <code>{os.path.basename(lrc_path)}</code>", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
-                else:
-                    bot.edit_message_text(f"❌ <b>Sync Lirik gagal</b> - Lirik tidak ditemukan untuk: {query}", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
-                _send_post_dl_options(chat_id, f"📍 <code>{os.path.basename(filepath)}</code>")
-            except ImportError:
-                bot.edit_message_text("❌ Module syncedlyrics tidak terinstall.", chat_id=chat_id, message_id=msg.message_id)
-            except Exception as e:
-                bot.edit_message_text(f"❌ {_friendly_error(e)}", chat_id=chat_id, message_id=msg.message_id)
-        if not _safe_submit_task(_sync):
+        if not _safe_submit_task(lambda: _run_sync(chat_id, msg.message_id, filepath)):
             bot.edit_message_text("❌ Server sibuk, coba lagi.", chat_id=chat_id, message_id=msg.message_id)
     elif call.data == 'cmd_demucs':
         bot.answer_callback_query(call.id, "Pisah vokal...")
         msg = bot.send_message(chat_id, f"⏳ <b>Pisah Vokal (Demucs)</b>\n📍 <code>{os.path.basename(filepath)}</code>", parse_mode="HTML")
-        def _demucs():
-            try:
-                demucs_bin = ZdtPaths.get_demucs_bin()
-                if not os.path.exists(demucs_bin):
-                    demucs_bin = shutil.which("demucs")
-                if not demucs_bin:
-                    bot.edit_message_text("❌ Demucs AI belum terinstal.", chat_id=chat_id, message_id=msg.message_id)
-                    return
-                target_dir = os.path.dirname(filepath)
-                cmd_args = [demucs_bin, "--two-stems=vocals", "-o", target_dir, filepath]
-                process = _safe_popen(cmd_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-                last_update = time.time()
-                log_buffer = []
-                for line in iter(process.stdout.readline, ''):
-                    if not line: break
-                    log_buffer.append(line.strip())
-                    log_buffer = log_buffer[-5:]
-                    if time.time() - last_update > 3.0:
-                        import html
-                        try:
-                            bot.edit_message_text(f"⏳ <b>Pisah Vokal</b>\n<pre>{html.escape(chr(10).join(log_buffer))}</pre>", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
-                        except Exception:
-                            pass
-                        last_update = time.time()
-                process.wait()
-                if process.returncode == 0:
-                    name_no_ext = os.path.splitext(os.path.basename(filepath))[0]
-                    bot.edit_message_text(f"✅ <b>Pisah Vokal berhasil</b>\n📍 <code>{name_no_ext}_vocals / _novokal</code>", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
-                else:
-                    bot.edit_message_text(f"❌ <b>Pisah Vokal gagal</b>", chat_id=chat_id, message_id=msg.message_id, parse_mode="HTML")
-                _send_post_dl_options(chat_id, f"📍 <code>{os.path.basename(filepath)}</code>")
-            except Exception as e:
-                try:
-                    bot.edit_message_text(f"❌ {_friendly_error(e)}", chat_id=chat_id, message_id=msg.message_id)
-                except Exception:
-                    bot.send_message(chat_id, f"❌ {_friendly_error(e)}")
-        if not _safe_submit_task(_demucs):
-            try:
-                bot.edit_message_text("❌ Server sibuk, coba lagi.", chat_id=chat_id, message_id=msg.message_id)
-            except Exception:
-                bot.send_message(chat_id, "❌ Server sibuk, coba lagi.")
+        if not _safe_submit_task(lambda: _run_demucs(chat_id, msg.message_id, filepath)):
+            bot.edit_message_text("❌ Server sibuk, coba lagi.", chat_id=chat_id, message_id=msg.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('cmd_'))
 def callback_query(call):
