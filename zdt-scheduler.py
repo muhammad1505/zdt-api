@@ -134,10 +134,34 @@ def sync_playlist(url):
 
 
 def run_cycle():
-    """Execute one scheduler cycle: check all playlists."""
+    """Execute one scheduler cycle: check all playlists + daily backup."""
     now = datetime.now(timezone.utc)
     schedule = load_schedule()
     playlists = schedule.get("playlists", [])
+
+    # Daily auto-backup (check every cycle, but only run once per day)
+    last_backup_str = schedule.get("last_db_backup", "")
+    should_backup = False
+    if not last_backup_str:
+        should_backup = True
+    else:
+        try:
+            last_backup = datetime.fromisoformat(last_backup_str)
+            if (now - last_backup).total_seconds() >= 86400:
+                should_backup = True
+        except (ValueError, TypeError):
+            should_backup = True
+    if should_backup:
+        try:
+            from database import backup_database
+            backup_path, error = backup_database()
+            if backup_path:
+                print(f"  [{now.strftime('%H:%M:%S')}] Auto-backup: {backup_path}")
+                schedule["last_db_backup"] = now.isoformat()
+            else:
+                print(f"  [{now.strftime('%H:%M:%S')}] Auto-backup failed: {error}")
+        except Exception as e:
+            print(f"  [{now.strftime('%H:%M:%S')}] Auto-backup error: {e}")
     
     if not playlists:
         return  # No playlists configured

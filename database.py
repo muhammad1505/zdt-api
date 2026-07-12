@@ -569,7 +569,7 @@ def set_last_seen_notif_id(user_id: int, notif_id: int):
 def backup_database():
     db_path = get_db_path()
     if not os.path.exists(db_path):
-        return None
+        return None, "Database not found"
     backup_dir = os.path.join(os.path.dirname(db_path), 'backups')
     os.makedirs(backup_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -580,6 +580,48 @@ def backup_database():
         backup_conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
         backup_conn.close()
         shutil.copy2(db_path, backup_path)
-        return backup_path
+        return backup_path, None
     except Exception as e:
-        return None
+        return None, str(e)
+
+
+def restore_database(backup_path: str) -> tuple:
+    if not os.path.exists(backup_path):
+        return False, "Backup file not found"
+    try:
+        verify_conn = sqlite3.connect(backup_path)
+        verify_conn.execute('SELECT COUNT(*) FROM users')
+        verify_conn.close()
+    except Exception:
+        return False, "Invalid backup file"
+    db_path = get_db_path()
+    try:
+        if os.path.exists(db_path):
+            backup_path_fallback, _ = backup_database()
+        conn = sqlite3.connect(db_path)
+        conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        conn.close()
+        shutil.copy2(backup_path, db_path)
+        return True, "Database restored successfully"
+    except Exception as e:
+        return False, str(e)
+
+
+def list_backups() -> list:
+    db_path = get_db_path()
+    backup_dir = os.path.join(os.path.dirname(db_path), 'backups')
+    if not os.path.exists(backup_dir):
+        return []
+    backups = []
+    for f in sorted(os.listdir(backup_dir), reverse=True):
+        if f.endswith('.db') and f.startswith('zdt_api_backup_'):
+            fpath = os.path.join(backup_dir, f)
+            size = os.path.getsize(fpath)
+            mtime = os.path.getmtime(fpath)
+            backups.append({
+                'filename': f,
+                'path': fpath,
+                'size': size,
+                'created_at': datetime.fromtimestamp(mtime).isoformat()
+            })
+    return backups

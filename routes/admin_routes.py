@@ -16,8 +16,9 @@ from database import (
     get_all_api_keys, generate_api_key, revoke_api_key, delete_api_key,
     get_all_users, create_user, delete_user,
     get_activity_logs, get_smart_api_key_string, get_connection,
-    log_vpn_event
+    log_vpn_event, backup_database, restore_database, list_backups, get_db_path
 )
+from datetime import datetime
 from config import config
 
 logger = logging.getLogger(__name__)
@@ -771,6 +772,57 @@ def vpn_set_config():
             'error': 'Internal server error',
             'message': str(e)
         }), 500
+
+
+# === BACKUP & RESTORE ===
+
+@admin_bp.route('/api/admin/backup', methods=['POST'])
+@requires_admin
+def create_backup():
+    try:
+        backup_path, error = backup_database()
+        if error:
+            return jsonify({'success': False, 'message': error}), 500
+        config_path = config.config_path
+        config_backup = None
+        if os.path.exists(config_path):
+            import shutil as _sh
+            backup_dir = os.path.join(os.path.dirname(get_db_path()), 'backups')
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            config_backup = os.path.join(backup_dir, f'config_backup_{ts}.env')
+            _sh.copy2(config_path, config_backup)
+        return jsonify({
+            'success': True,
+            'message': 'Backup created',
+            'db_backup': backup_path,
+            'config_backup': config_backup
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/backups', methods=['GET'])
+@requires_admin
+def list_backups_api():
+    try:
+        backups = list_backups()
+        return jsonify({'success': True, 'backups': backups})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@admin_bp.route('/api/admin/backup/restore', methods=['POST'])
+@requires_admin
+def restore_backup():
+    try:
+        data = request.get_json(silent=True) or {}
+        backup_path = data.get('path', '')
+        if not backup_path:
+            return jsonify({'success': False, 'message': 'Backup path required'}), 400
+        success, message = restore_database(backup_path)
+        return jsonify({'success': success, 'message': message})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 @admin_bp.route('/api/update-check', methods=['GET'])
