@@ -93,6 +93,18 @@ def _safe_popen(cmd_args, **kwargs):
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'zdt_api.db')
 
+def _friendly_error(e: Exception) -> str:
+    err_str = str(e)
+    if 'api.telegram.org' in err_str or 'telegram' in err_str.lower():
+        return "Jaringan sedang bermasalah, coba lagi nanti."
+    if 'timeout' in err_str.lower():
+        return "Koneksi timeout, coba lagi nanti."
+    if 'connection' in err_str.lower() or 'network' in err_str.lower() or 'unreachable' in err_str.lower():
+        return "Koneksi jaringan terputus, periksa internet server."
+    if 'resolve' in err_str.lower() or 'dns' in err_str.lower() or 'name or service' in err_str.lower():
+        return "DNS gagal meresolve, coba lagi nanti."
+    return f"Terjadi kesalahan: {type(e).__name__}"
+
 def _record_download(url: str, fmt: str = 'audio', status: str = 'completed', title: str = '', file_path: str = ''):
     """Record a download in the shared database for unified statistics."""
     try:
@@ -612,7 +624,7 @@ Chat: {history_context}"""
                                             else:
                                                 bot.reply_to(message, f"❌ <b>Terjadi kesalahan.</b>\n\n📄 <b>Error:</b>\n<pre>{html.escape(final_context)}</pre>", parse_mode="HTML")
                                     except Exception as e:
-                                        bot.reply_to(message, f"❌ System Error: {e}")
+                                        bot.reply_to(message, f"❌ System Error: {_friendly_error(e)}")
                                 if not _safe_submit_task(_task):
                                     if progress_msg:
                                         try:
@@ -752,7 +764,7 @@ Chat: {history_context}"""
                                         else:
                                             bot.reply_to(message, "❌ Pencarian tidak menemukan hasil.")
                                     except Exception as e:
-                                        bot.reply_to(message, f"❌ Error pencarian: {e}")
+                                        bot.reply_to(message, f"❌ Pencarian gagal: {_friendly_error(e)}")
                                 if not _safe_submit_task(lambda: _search_task(0)):
                                     bot.reply_to(message, "❌ Server sibuk, coba lagi nanti.")
                             elif action.startswith("cari playlist"):
@@ -792,8 +804,8 @@ Chat: {history_context}"""
                                             bot.reply_to(message, f"🎯 <b>Hasil Pencarian Playlist:</b>\n\n{out_text}\n\n<i>Balas dengan nomor (misal: 'download playlist nomor 1') atau linknya!</i>", parse_mode="HTML", link_preview_options=telebot.types.LinkPreviewOptions(is_disabled=True))
                                         else:
                                             bot.reply_to(message, "❌ Pencarian playlist tidak menemukan hasil.")
-                                    except Exception as e:
-                                        bot.reply_to(message, f"❌ Error pencarian playlist: {e}")
+                                        except Exception as e:
+                                            bot.reply_to(message, f"❌ Error: {_friendly_error(e)}")
                                 if not _safe_submit_task(_search_playlist_task):
                                     bot.reply_to(message, "❌ Server sibuk, coba lagi nanti.")
                             elif action == "hapus vokal":
@@ -832,14 +844,14 @@ Chat: {history_context}"""
                                     with open(os.devnull, 'w') as devnull:
                                         subprocess.Popen([get_zdt_bin(), "--setup"], stdout=devnull, stderr=devnull, start_new_session=True)
                                 except Exception as e:
-                                    bot.reply_to(message, f"❌ Error: {e}")
+                                    bot.reply_to(message, f"❌ {_friendly_error(e)}")
                             elif action == "update tools":
                                 bot.reply_to(message, "🔄 Menjalankan Update ZDT...")
                                 try:
                                     with open(os.devnull, 'w') as devnull:
                                         subprocess.Popen([get_zdt_bin(), "--update"], stdout=devnull, stderr=devnull, start_new_session=True)
                                 except Exception as e:
-                                    bot.reply_to(message, f"❌ Error: {e}")
+                                    bot.reply_to(message, f"❌ {_friendly_error(e)}")
                             elif action == "start telegram":
                                 bot.reply_to(message, "🤖 Telegram Bot sudah berjalan! (Ini botnya sendiri)")
                             elif action == "start watch":
@@ -1142,7 +1154,7 @@ def dl_confirm_callback(call):
             else:
                 bot.edit_message_text(f"❌ <b>Download {label} gagal.</b>\n\n<pre>{html.escape(final_context)}</pre>", chat_id=chat_id, message_id=sent_msg.message_id, parse_mode="HTML")
         except Exception as e:
-            bot.edit_message_text(f"❌ System Error: {e}", chat_id=chat_id, message_id=sent_msg.message_id)
+            bot.edit_message_text(f"❌ {_friendly_error(e)}", chat_id=chat_id, message_id=sent_msg.message_id)
 
     if not _safe_submit_task(_task):
         bot.edit_message_text("❌ Server sibuk, coba lagi nanti.", chat_id=chat_id, message_id=sent_msg.message_id)
@@ -1186,7 +1198,7 @@ def post_download_callback(call):
             except ImportError:
                 bot.edit_message_text("❌ Module syncedlyrics tidak terinstall.", chat_id=chat_id, message_id=msg.message_id)
             except Exception as e:
-                bot.edit_message_text(f"❌ Error: {e}", chat_id=chat_id, message_id=msg.message_id)
+                bot.edit_message_text(f"❌ {_friendly_error(e)}", chat_id=chat_id, message_id=msg.message_id)
         if not _safe_submit_task(_sync):
             bot.edit_message_text("❌ Server sibuk, coba lagi.", chat_id=chat_id, message_id=msg.message_id)
     elif call.data == 'cmd_demucs':
@@ -1225,9 +1237,9 @@ def post_download_callback(call):
                 _send_post_dl_options(chat_id, f"📍 <code>{os.path.basename(filepath)}</code>")
             except Exception as e:
                 try:
-                    bot.edit_message_text(f"❌ Error: {e}", chat_id=chat_id, message_id=msg.message_id)
+                    bot.edit_message_text(f"❌ {_friendly_error(e)}", chat_id=chat_id, message_id=msg.message_id)
                 except Exception:
-                    bot.send_message(chat_id, f"❌ Error: {e}")
+                    bot.send_message(chat_id, f"❌ {_friendly_error(e)}")
         if not _safe_submit_task(_demucs):
             try:
                 bot.edit_message_text("❌ Server sibuk, coba lagi.", chat_id=chat_id, message_id=msg.message_id)
@@ -1263,7 +1275,7 @@ def callback_query(call):
         with open(os.devnull, 'w') as devnull:
             subprocess.Popen([get_zdt_bin(), bash_flag], stdout=devnull, stderr=devnull, start_new_session=True)
     except Exception as e:
-        bot.send_message(call.message.chat.id, f"❌ Terjadi kesalahan: {str(e)}")
+        bot.send_message(call.message.chat.id, f"❌ {_friendly_error(e)}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('do_demucs|') or call.data.startswith('do_kompres|'))
 def process_specific_file(call):
@@ -1400,7 +1412,7 @@ def process_specific_file(call):
                 bot.edit_message_text(f"❌ *{task_name} Gagal!*", chat_id=msg.chat.id, message_id=msg.message_id, parse_mode="Markdown")
                 
         except Exception as e:
-            bot.edit_message_text(f"❌ Error: {str(e)}", chat_id=msg.chat.id, message_id=msg.message_id)
+            bot.edit_message_text(f"❌ {_friendly_error(e)}", chat_id=msg.chat.id, message_id=msg.message_id)
 
     if not _safe_submit_task(_task):
         try:
@@ -1440,7 +1452,7 @@ def confirm_delete_callback(call):
         
         bot.edit_message_text(f"✅ *Selesai!* {deleted} item berhasil dihapus dari:\n`{target_path}`", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown")
     except Exception as e:
-        bot.edit_message_text(f"❌ Gagal menghapus: {e}", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        bot.edit_message_text(f"❌ {_friendly_error(e)}", chat_id=call.message.chat.id, message_id=call.message.message_id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'CANCEL_DELETE')
@@ -1552,7 +1564,7 @@ def search_page_callback(call):
                 logging.warning(f"Failed to show search results: {e}")
         except Exception as e:
             try:
-                bot.edit_message_text(f"❌ Error: {e}", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                bot.edit_message_text(f"❌ {_friendly_error(e)}", chat_id=call.message.chat.id, message_id=call.message.message_id)
             except Exception as inner_e:
                 logging.warning(f"Failed to show error message: {inner_e}")
     if not _safe_submit_task(_paginate):
