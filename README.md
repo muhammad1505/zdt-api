@@ -5,12 +5,18 @@ Standalone API server untuk ZDT Mobile app & Telegram Bot. Flask + SQLite backen
 ## Features
 
 - **ZDT Web Console** (`/`) — Template-based web console untuk download, Spotify sync, metadata editor, tools, logs, scheduler, notifikasi. Dengan login overlay + JWT Bearer token.
-- **Admin Dashboard** (`/admin/`) — React + Tailwind SPA untuk manage server, users, API keys, VPN, services, system config.
+- **Admin Dashboard** (`/admin/`) — React + Tailwind SPA untuk manage server, users, API keys, VPN, services, system config, dependencies, notifications.
 - **Telegram Bot** — AI-powered assistant (Gemini/OpenRouter), search & download YouTube, pisah vokal, kompres media, dll.
 - **Download Engine** — yt-dlp backend untuk download audio/video dari YouTube, TikTok, Instagram, dll.
 - **File Management** — Browse, search, stream, download, upload, rename, delete file langsung dari browser
-- **VPN Manager** — Connect/disconnect VPN, auto-reconnect, connection log
-- **API Key Auth** — Smart API Key untuk mobile app, JWT untuk admin dashboard
+- **VPN Manager** — Connect/disconnect VPN, auto-reconnect, connection log, restart
+- **Task Queue** — SQLite-backed persistent antrian task dengan worker thread, max 3 concurrent, support cancel + timeout kill. Task types: download, demucs, sync_lirik, kompres.
+- **Real-time Notifications** — SSE stream untuk task events + EventBus pub/sub internal + admin notification system dengan unread count.
+- **Backup & Restore** — Backup database SQLite + config.env, list backup, restore dengan auto-backup sebelumnya.
+- **Auto-Update** — Cek rilis GitHub, git pull + pip install + restart service otomatis.
+- **Plugin System** — Hot-loadable plugins dengan hooks: on_load, on_unload, on_task_complete, on_task_fail, on_download_complete, on_startup.
+- **Metrics History** — Background collector untuk CPU load, memory, disk tiap 60 detik, retention 7 hari.
+- **API Key Auth** — Smart API Key untuk mobile app, JWT + refresh token untuk admin dashboard. Brute-force protection (5 gagal = blokir 15 menit).
 - **Systemd Services** — zdt-api, zdt-telegram, zdt-watch, zdt-scheduler sebagai systemd service
 - **Watch Daemon** — Auto-process file baru (rename, kompres, extract vocal)
 
@@ -150,23 +156,31 @@ Format response AI (JSON):
 
 ### Public
 - `GET /api/health` — Health check
+- `GET /api/csrf-token` — Generate CSRF token
 
 ### Auth
-- `POST /api/login` — Admin login (returns JWT)
+- `POST /api/login` — Admin login (returns JWT Bearer + refresh token). Brute-force protection: 5 gagal dalam 5 menit = blokir 15 menit.
+- `POST /api/auth/refresh` — Tukar refresh token dengan Bearer token baru (refresh token lama invalid setelah dipakai)
 - `POST /api/verify-key` — Verify Smart API Key
+- `GET /api/profile` — Profile user yg login (id, username, role, label)
+- `PUT /api/profile` — Update display label user
+- `POST /api/profile/password` — Ganti password dengan verifikasi password lama
 
 ### Files
 - `GET /api/files` — List files (paginated, sortable, filterable)
+- `GET /api/files/browse` — Browse files/folders flat (non-rekursif), scope `media` / `system`
 - `GET /api/files/search?q=term` — Search files
 - `GET /api/files/info/<path>` — File metadata (duration via ffprobe)
 - `DELETE /api/files/<path>` — Delete file/directory
+- `POST /api/files/delete` — Delete via POST (alternatif), support scope media/system
 - `POST /api/files/mkdir` — Create directory
 - `POST /api/files/rename` — Rename file
 - `GET /api/stream/<path>` — Stream media (video/audio)
 - `GET /api/dl/<path>` — Download file
 - `POST /api/upload` — Upload file
+- `POST /api/metadata` — Edit audio file metadata (title/artist) — MP3/M4A/FLAC
 
-### Downloads
+### Downloads (Legacy)
 - `POST /api/download` — Queue download
 - `GET /api/downloads` — List download history
 - `GET /api/downloads/<id>` — Download detail + progress
@@ -177,35 +191,14 @@ Format response AI (JSON):
 - `POST /api/playlist/items` — Fetch playlist contents via yt-dlp
 - `POST /api/download-selected` — Batch download multiple URLs
 
-### Admin (Bearer Token)
-- `GET /api/admin/dashboard` — System overview stats
-- `GET /api/admin/services` — Service status list
-- `POST /api/admin/services/<name>/<action>` — Start/stop/restart/enable/disable
-- `GET /api/admin/keys` — List API keys
-- `POST /api/admin/keys` — Generate Smart API Key
-- `DELETE /api/admin/keys/<id>` — Revoke key
-- `GET /api/admin/users` — List users
-- `POST /api/admin/users` — Create user
-- `DELETE /api/admin/users/<id>` — Delete user
-- `GET /api/admin/config` — View config (masked secrets)
-- `POST /api/admin/config` — Update config
-- `GET /api/admin/activity` — Activity logs
-- `GET /api/admin/system/status` — Service health
-- `POST /api/admin/system/restart` — Restart API service
-- `POST /api/admin/system/shutdown` — Shutdown server
-
-### VPN
-- `GET /api/vpn/status` — Connection status (mobile-friendly)
-- `GET /api/admin/vpn/status` — Detailed status
-- `POST /api/admin/vpn/connect` — Connect
-- `POST /api/admin/vpn/disconnect` — Disconnect
-- `GET /api/admin/vpn/config` — View config
-- `POST /api/admin/vpn/config` — Update config
-- `GET /api/admin/vpn/log` — Connection log
-- `POST /api/admin/vpn/auto-reconnect` — Toggle auto-reconnect
-
-### Files
-- `POST /api/metadata` — Edit audio file metadata (title/artist) — MP3/M4A/FLAC
+### Task Queue (New)
+- `POST /api/tasks` — Buat task baru: `download_audio`, `download_video`, `demucs`, `sync_lirik`, `kompres`
+- `GET /api/tasks` — Daftar task milik user; filter by `status`, `limit`, `offset`
+- `GET /api/tasks/<id>` — Detail task (status, progress, error_message, file_path)
+- `POST /api/tasks/<id>/cancel` — Batalkan task (queued dihapus, running dikirim SIGTERM → SIGKILL)
+- `DELETE /api/tasks/<id>` — Hapus task dari history
+- `GET /api/tasks/queue/stats` — Statistik antrian per status (queued/running/completed/failed/cancelled)
+- `GET /api/tasks/stream` — SSE real-time task updates (EventBus + SSEManager, ping 30 detik)
 
 ### Daemon & Tools
 - `POST /api/daemon` — Watch/scheduler control
@@ -223,6 +216,16 @@ Format response AI (JSON):
 ### Settings & Info
 - `GET /api/settings` — All settings grouped
 - `POST /api/settings` — Batch update settings
+- `GET /api/settings/storage` — Get storage config
+- `POST /api/settings/storage` — Update target directory
+- `GET /api/settings/download` — Get download preferences
+- `POST /api/settings/download` — Update download preferences
+- `GET /api/settings/telegram` — Get Telegram config (masked)
+- `POST /api/settings/telegram` — Update Telegram config
+- `POST /api/settings/telegram/test` — Kirim test message Telegram
+- `GET /api/settings/ai-keys` — Get AI API keys (masked)
+- `POST /api/settings/ai-keys` — Update/delete AI API keys
+- `GET /api/settings/browse-dir` — Browse filesystem directories
 - `GET /api/server/info` — Version, tools, IP, storage info
 - `GET /api/notify/config` — Telegram notification config
 - `POST /api/notify/config` — Update notification config
@@ -233,8 +236,64 @@ Format response AI (JSON):
 - `GET /api/status` — Server health
 - `POST /api/stats/reset` — Reset download statistics
 
+### VPN
+- `GET /api/vpn/status` — Connection status (mobile-friendly)
+- `GET /api/admin/vpn/status` — Detailed status
+- `POST /api/admin/vpn/connect` — Connect
+- `POST /api/admin/vpn/disconnect` — Disconnect
+- `POST /api/admin/vpn/restart` — Restart koneksi (disconnect + connect ulang)
+- `GET /api/admin/vpn/config` — View config
+- `POST /api/admin/vpn/config` — Update config
+- `GET /api/admin/vpn/log` — Connection log
+- `POST /api/admin/vpn/auto-reconnect` — Toggle auto-reconnect
+
+### Admin — Users & Keys
+- `GET /api/admin/keys` — List API keys
+- `POST /api/admin/keys` — Generate Smart API Key
+- `DELETE /api/admin/keys/<id>` — Revoke key
+- `GET /api/admin/users` — List users
+- `POST /api/admin/users` — Create user
+- `PUT /api/admin/users/<id>` — Update user (username, password, role, label, active)
+- `DELETE /api/admin/users/<id>` — Delete user
+
+### Admin — System
+- `GET /api/admin/dashboard` — System overview stats
+- `GET /api/admin/services` — Service status list
+- `POST /api/admin/services/<name>/<action>` — Start/stop/restart/enable/disable
+- `GET /api/admin/config` — View config (masked secrets)
+- `POST /api/admin/config` — Update config
+- `GET /api/admin/system/status` — Service health
+- `POST /api/admin/system/restart` — Restart API service
+- `POST /api/admin/system/shutdown` — Shutdown server
+- `GET /api/admin/dependencies` — Cek ketersediaan tools (ffmpeg, yt-dlp, spotdl, dll)
+- `POST /api/admin/dependencies/install` — Install missing dependencies (timeout 10 menit)
+
+### Admin — Activity & Notifications
+- `GET /api/admin/activity` — Activity logs
+- `POST /api/admin/activity/clear` — Hapus semua activity logs
+- `GET /api/admin/notifications` — Notifikasi penting dengan unread_count + since_id
+- `GET /api/admin/notifications/last-seen` — Ambil last seen notification ID
+- `POST /api/admin/notifications/last-seen` — Simpan last seen notification ID
+- `GET /api/admin/notifications/settings` — Preferensi notifikasi (sound, desktop)
+- `POST /api/admin/notifications/settings` — Simpan preferensi notifikasi
+
+### Admin — Metrics
+- `GET /api/admin/metrics/history` — Histori CPU load, memory, disk (?hours=1-168)
+
+### Admin — Backup
+- `POST /api/admin/backup` — Backup database + config.env ke folder `backups/`
+- `GET /api/admin/backups` — Daftar semua file backup
+- `POST /api/admin/backup/restore` — Restore database dari file backup
+
+### Admin — Plugins
+- `GET /api/admin/plugins` — Scan & list semua plugin + status loaded
+- `POST /api/admin/plugins/<name>/load` — Load plugin ke memory
+- `POST /api/admin/plugins/<name>/unload` — Unload plugin dari memory
+
 ### Update
 - `GET /api/update-check` — Check GitHub for newer version
+- `POST /api/update-apply` — Git pull + pip install + restart service
+- `GET /api/update-log` — Log update terakhir
 
 ### Auth Methods
 
@@ -246,7 +305,7 @@ X-API-Key: <base64-encoded-smart-key>
 
 **Admin Dashboard** — Bearer token:
 ```
-POST /api/login  →  { "token": "jwt..." }
+POST /api/login  →  { "token": "jwt...", "refresh_token": "zdt_rt_..." }
 Authorization: Bearer <jwt-token>
 ```
 
@@ -290,20 +349,25 @@ Rate limiting is handled by `middleware.py`. Default: 240 requests/minute per IP
 ```
 zdt-api/
 ├── server.py              # 🎯 Flask app entrypoint — serve ZDT Web (/) + Admin (/admin/) + API
-├── auth.py                # JWT, API Key auth, password hashing
+├── auth.py                # JWT, API Key auth, password hashing, refresh token, brute-force protection
 ├── config.py              # Config reader (config.env)
 ├── database.py            # SQLite init + CRUD
 ├── middleware.py           # CORS, security headers, rate limiting (Redis + in-memory)
+├── events.py              # EventBus pub/sub internal + SSEManager untuk task events
+├── metrics.py             # Background metrics collector (CPU, memory, disk tiap 60 detik, retention 7 hari)
+├── plugin_system.py       # Plugin discovery, load/unload, hooks system
+├── task_queue.py          # SQLite-backed persistent task queue + worker thread (max 3 concurrent)
+├── openapi_spec.py        # OpenAPI 3.0.3 spec untuk Swagger UI
 ├── routes/                # Flask blueprints
-│   ├── admin_routes.py    # Admin: dashboard, services, users, keys, system, update-check
-│   ├── auth_routes.py     # Login, verify key
+│   ├── admin_routes.py    # Admin: dashboard, services, users, keys, system, backup, plugins, dependencies, notifications, metrics, update
+│   ├── auth_routes.py     # Login, refresh token, verify key, profile
 │   ├── daemon_routes.py   # Demucs, compress, sync, tools, scheduler status/playlists
 │   ├── dashboard_routes.py# Dashboard stats + stats reset
 │   ├── download_routes.py # Download queue, spotify-sync, playlist/items, download-selected
 │   ├── files_routes.py    # File browser, stream, upload, metadata editor
 │   ├── logs_routes.py     # Log viewer, SSE stream, system logs
-│   ├── settings_routes.py # All settings CRUD, notify config, server info
-│   └── vpn_routes.py      # VPN connect/disconnect/status
+│   ├── settings_routes.py # All settings CRUD, notify config, server info, AI keys
+│   └── vpn_routes.py      # VPN connect/disconnect/status/restart
 ├── zdt-telegram.py        # Telegram bot daemon
 ├── zdt-scheduler.py       # Playlist sync scheduler
 ├── zdt-watch.py           # File watcher daemon
@@ -317,10 +381,13 @@ zdt-api/
 │       └── types/         # TypeScript types
 ├── static/                # ZDT Web Console static files
 │   ├── dashboard.css      #   CSS: Warm Console design system (v5.0)
-│   └── dashboard.js       #   JS: Auth, SSE, tools, scheduler, logs, themes
+│   ├── dashboard.js       #   JS: Auth, SSE, tools, scheduler, logs, themes
+│   └── swagger-ui-bundle.js # Swagger UI bundle
 ├── templates/             # ZDT Web Console (serve di /) — dashboard.html
 ├── systemd/               # systemd unit files
 ├── zdt-modules/           # Shared shell + python modules
+├── plugins/               # Plugin directory (hot-loadable)
+├── backups/               # Backup files (database + config)
 └── tests/                 # pytest tests
 ```
 
@@ -344,7 +411,8 @@ docker run -d \
 ## Security
 
 - Passwords hashed with werkzeug (bcrypt/scrypt), transparent SHA-256 migration
-- JWT secret persisted in config.env
+- JWT secret persisted in config.env. Refresh token (`zdt_rt_` + 32 byte hex) berlaku 30 hari, sekali pakai.
+- Brute-force login protection: 5 gagal dalam 5 menit = blokir 15 menit per IP
 - CSRF protection for cookie sessions
 - Path traversal protection on all file endpoints
 - Filename sanitization via `werkzeug.utils.secure_filename`
@@ -369,6 +437,30 @@ python tests/verify_production.py
 ```
 
 ## Bug Fixes & Changelog
+
+### v2.0.0 — Task Queue, Event System, Backup, Plugin System, Refresh Token
+
+| Perubahan | File | Deskripsi |
+|-----------|------|-----------|
+| **Task Queue Engine** | `task_queue.py` | SQLite-backed persistent antrian task dengan worker thread, max 3 concurrent tasks. Support cancel dengan SIGTERM → SIGKILL. Task types: download_audio, download_video, demucs, sync_lirik, kompres. |
+| **Task Queue API** | `routes/admin_rules.py` | 7 endpoint: CRUD task + cancel + queue stats + SSE stream real-time |
+| **EventBus** | `events.py` | Event pub/sub internal untuk task updates. Support subscribe/unsubscribe/emit. |
+| **SSEManager** | `events.py` | Manajemen koneksi SSE: add/remove client, broadcast event ke semua client. Ping tiap 30 detik. |
+| **Metrics Collector** | `metrics.py` | Background thread mengumpulkan CPU load, memory, disk tiap 60 detik ke SQLite. Retention 7 hari. |
+| **Metrics API** | `routes/admin_routes.py` | `GET /api/admin/metrics/history` dengan parameter `?hours=1-168` |
+| **Plugin System** | `plugin_system.py` | Plugin discovery dari folder `plugins/`, hot load/unload. Hooks: on_load, on_unload, on_task_complete, on_task_fail, on_download_complete, on_startup. |
+| **Plugin API** | `routes/admin_routes.py` | `GET /api/admin/plugins`, `POST .../load`, `POST .../unload` |
+| **Backup & Restore** | `routes/admin_routes.py` | Backup database SQLite + config.env ke folder `backups/`. Restore dengan auto-backup sebelumnya. |
+| **Auto-Update** | `routes/admin_routes.py` | `POST /api/update-apply` — git pull + pip install + restart service. `GET /api/update-log`. |
+| **Admin Notifications** | `routes/admin_routes.py` | Sistem notifikasi penting dengan unread_count, since_id tracking, preferensi sound/desktop per user. |
+| **Dependencies Check** | `routes/admin_routes.py` | `GET /api/admin/dependencies` cek ketersediaan tools, `POST .../install` install missing. |
+| **Refresh Token** | `routes/auth_routes.py` | Refresh token (`zdt_rt_` + 32 byte hex) berlaku 30 hari, sekali pakai (token lama di-pop). Brute-force: 5 gagal dalam 5 menit = blokir 15 menit per IP. |
+| **Profile API** | `routes/auth_routes.py` | `GET /api/profile`, `PUT /api/profile`, `POST /api/profile/password` |
+| **Settings Sub-endpoints** | `routes/settings_routes.py` | Endpoint individual untuk storage, download, telegram, ai-keys. |
+| **File Browse** | `routes/files_routes.py` | `GET /api/files/browse` — browse non-rekursif dengan scope media/system. |
+| **VPN Restart** | `routes/vpn_routes.py` | `POST /api/admin/vpn/restart` — disconnect + connect ulang, timeout 30 detik. |
+| **OpenAPI Spec** | `openapi_spec.py` | Update ke v1.3.0, tambah semua endpoint baru, contoh request/response, info refresh token & brute-force. |
+| **Swagger UI** | `static/swagger-ui-bundle.js` | Swagger UI bundle di `/api/docs` untuk dokumentasi interaktif. |
 
 ### v1.4.0 — daisyUI Migration, Telegram Overhaul, CSRF Fixes
 
