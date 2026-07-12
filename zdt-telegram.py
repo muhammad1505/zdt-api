@@ -696,7 +696,12 @@ Chat: {history_context}"""
                                     
                                 def _search_task(page=0):
                                     try:
-                                        res = subprocess.run([YT_DLP, f"ytsearch10:{query}", "--print", "%(title)s|%(webpage_url)s"], capture_output=True, text=True)
+                                        try:
+                                            res = subprocess.run([YT_DLP, f"ytsearch10:{query}", "--print", "%(title)s|%(webpage_url)s"], capture_output=True, text=True, timeout=30)
+                                        except subprocess.TimeoutExpired:
+                                            logging.warning(f"Search timeout for query: {query}")
+                                            bot.reply_to(message, "⏱️ Pencarian timeout, coba lagi nanti.")
+                                            return
                                         if res.returncode == 0 and res.stdout.strip():
                                             import telebot
                                             import html
@@ -1477,7 +1482,15 @@ def search_page_callback(call):
     def _paginate():
         try:
             import html
-            res = subprocess.run([YT_DLP, f"ytsearch10:{query}", "--print", "%(title)s|%(webpage_url)s"], capture_output=True, text=True)
+            try:
+                res = subprocess.run([YT_DLP, f"ytsearch10:{query}", "--print", "%(title)s|%(webpage_url)s"], capture_output=True, text=True, timeout=30)
+            except subprocess.TimeoutExpired:
+                logging.warning(f"Search pagination timeout for query: {query}")
+                try:
+                    bot.edit_message_text("⏱️ Pencarian timeout, coba lagi nanti.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                except Exception:
+                    pass
+                return
             if res.returncode != 0 or not res.stdout.strip():
                 try:
                     bot.edit_message_text("❌ Pencarian tidak menemukan hasil.", chat_id=call.message.chat.id, message_id=call.message.message_id)
