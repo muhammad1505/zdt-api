@@ -956,7 +956,6 @@ def start_dl_flow(msg_or_call, url, via_search=False):
 
 
 AUDIO_FORMATS = {'m4a': '1', 'mp3': '2', 'flac': '3', 'wav': '4', 'opus': '5', 'ogg': '6'}
-VIDEO_FORMATS = {'mp4': '1', 'mkv': '2', 'webm': '3', 'avi': '4', 'mov': '5', 'ts': '6'}
 
 def _dl_cancel_button():
     return InlineKeyboardButton("❌ Batal", callback_data="dl_no")
