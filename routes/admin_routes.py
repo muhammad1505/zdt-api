@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, g
 import os
+import json
 import shutil
 import subprocess
 import hashlib
@@ -825,12 +826,97 @@ def restore_backup():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+UPDATE_LOG_PATH = '/tmp/zdt_update.log'
+
+def _get_remote_version() -> str:
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            'https://api.github.com/repos/muhammad1505/zdt-api/releases/latest',
+            headers={'Accept': 'application/json', 'User-Agent': 'zdt-api'},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+            return (data.get('tag_name') or data.get('name', '')).lstrip('v')
+    except Exception:
+        try:
+            req = urllib.request.Request(
+                'https://raw.githubusercontent.com/muhammad1505/zdt-api/main/VERSION',
+                headers={'User-Agent': 'zdt-api'},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.read().decode().strip()
+        except Exception:
+            return ''
+
+
 @admin_bp.route('/api/update-check', methods=['GET'])
 @requires_admin
 def check_update():
-    """Placeholder — update check removed."""
-    import json as _ju
-    return _ju.dumps({"has_update": False, "current": "v" + config.get_version(), "latest": ""}), 200, {"Content-Type": "application/json"}
+    try:
+        current = config.get_version()
+        latest = _get_remote_version()
+        has_update = bool(latest) and latest != current
+        return jsonify({
+            'has_update': has_update,
+            'current': current,
+            'latest': latest
+        })
+    except Exception as e:
+        return jsonify({'has_update': False, 'current': config.get_version(), 'latest': '', 'error': str(e)})
+
+
+@admin_bp.route('/api/update-apply', methods=['POST'])
+@requires_admin
+def apply_update():
+    try:
+        with open(UPDATE_LOG_PATH, 'w') as f:
+            f.write("[ZDT] Memulai update...\n")
+
+        import subprocess as _sp
+        import sys as _sys
+
+        project = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        log_lines = []
+
+        def _log(msg):
+            log_lines.append(msg)
+            with open(UPDATE_LOG_PATH, 'a') as f:
+                f.write(msg + '\n')
+
+        _log("[ZDT] Pull dari GitHub...")
+        r = _sp.run(['git', 'pull'], capture_output=True, text=True, timeout=30, cwd=project)
+        _log(r.stdout[-300:] if r.stdout else '')
+        if r.returncode != 0:
+            _log(f"Git pull error: {r.stderr[-300:]}")
+            return jsonify({'success': False, 'message': 'Git pull failed', 'log': '\n'.join(log_lines)})
+
+        _log("[ZDT] Install dependencies...")
+        req_file = os.path.join(project, 'requirements.txt')
+        if os.path.exists(req_file):
+            pip = _sys.executable + ' -m pip'
+            r = _sp.run(f'{pip} install -r {req_file} --quiet', shell=True, capture_output=True, text=True, timeout=120)
+            _log(r.stdout[-200:] if r.stdout else '')
+            if r.returncode != 0:
+                _log(f"Pip error: {r.stderr[-200:]}")
+
+        _log("[ZDT] Update selesai! Restart service...")
+        _sp.run(['sudo', 'systemctl', 'restart', 'zdt-api'], capture_output=True, timeout=10)
+        return jsonify({'success': True, 'message': 'Update applied, server restarting...', 'log': '\n'.join(log_lines)})
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'message': 'Update timeout'}), 504
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@admin_bp.route('/api/update-log', methods=['GET'])
+@requires_admin
+def get_update_log():
+    if os.path.exists(UPDATE_LOG_PATH):
+        with open(UPDATE_LOG_PATH) as f:
+            content = f.read()
+        return jsonify({'success': True, 'log': content})
+    return jsonify({'success': True, 'log': ''})
 
 
 # === SERVICE MANAGEMENT ===
