@@ -27,7 +27,7 @@ export interface DashboardData {
   disk: { total: number; free: number; used: number };
   uptime_hours: number;
   services: Record<string, boolean>;
-  vpn: { connected: boolean; ip: string; server?: string };
+  vpn: { connected: boolean; ip: string; server: string };
   version: string;
   target_dir: string;
   file_count: number;

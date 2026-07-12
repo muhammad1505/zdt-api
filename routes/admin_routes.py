@@ -281,7 +281,7 @@ def admin_dashboard():
             'disk': disk,
             'uptime_hours': uptime,
             'services': services,
-            'vpn': {'connected': 'vpn_ip' in net, 'ip': net.get('vpn_ip', '')},
+            'vpn': {'connected': 'vpn_ip' in net, 'ip': net.get('vpn_ip', ''), 'server': config.get('VPN_SERVER', '') or '-'},
             'version': config.get_version(),
             'target_dir': target_dir,
             'file_count': file_count,
