@@ -956,6 +956,7 @@ def start_dl_flow(msg_or_call, url, via_search=False):
 
 
 AUDIO_FORMATS = {'m4a': '1', 'mp3': '2', 'flac': '3', 'wav': '4', 'opus': '5', 'ogg': '6'}
+VIDEO_FORMATS = {'mp4': '1', 'mkv': '2', 'webm': '3', 'avi': '4', 'mov': '5', 'ts': '6'}
 
 def _dl_cancel_button():
     return InlineKeyboardButton("❌ Batal", callback_data="dl_no")
@@ -978,13 +979,32 @@ def dl_format_callback(call):
         markup.add(_dl_cancel_button())
         bot.edit_message_text("🎵 *Pilih Format Audio:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     else:
-        markup = InlineKeyboardMarkup(row_width=4)
+        markup = InlineKeyboardMarkup(row_width=3)
         row = []
-        for q in ('144', '240', '360', '480', '720', '1080', '1440', '2160'):
-            row.append(InlineKeyboardButton(f"{q}p", callback_data=f"dl_vq:{q}"))
+        for name in ('mp4', 'mkv', 'webm', 'avi', 'mov', 'ts'):
+            row.append(InlineKeyboardButton(name, callback_data=f"dl_vfmt:{name}"))
         markup.add(*row)
         markup.add(_dl_cancel_button())
-        bot.edit_message_text("🎬 *Pilih Kualitas Video:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        bot.edit_message_text("🎬 *Pilih Format Container Video:*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('dl_vfmt:'))
+def dl_video_format_callback(call):
+    vfmt = call.data.split(':')[1]
+    chat_id = call.message.chat.id
+    data = bot.user_data.get(chat_id, {})
+    if not data.get('dl_url'):
+        bot.answer_callback_query(call.id, "Sesi kadaluarsa.")
+        return
+    data['dl_video_format'] = vfmt
+    markup = InlineKeyboardMarkup(row_width=4)
+    row = []
+    for q in ('144', '240', '360', '480', '720', '1080', '1440', '2160'):
+        row.append(InlineKeyboardButton(f"{q}p", callback_data=f"dl_vq:{q}"))
+    markup.add(*row)
+    markup.add(_dl_cancel_button())
+    bot.edit_message_text(f"🎬 *Pilih Kualitas Video ({vfmt}):*", chat_id=chat_id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     bot.answer_callback_query(call.id)
 
 
@@ -1043,7 +1063,8 @@ def _dl_show_confirm(msg, _call_data):
         br = data.get('dl_bitrate', '128')
         detail_str = f"{afmt} • {br}kbps"
     else:
-        detail_str = f"{data.get('dl_quality', '?')}p"
+        vfmt = data.get('dl_video_format', 'mp4')
+        detail_str = f"{vfmt} • {data.get('dl_quality', '?')}p"
 
     summary = f"📥 *Konfirmasi Download*\n"
     summary += f"🔗 `{url}`\n"
@@ -1093,7 +1114,11 @@ def dl_confirm_callback(call):
         if afmt in AUDIO_FORMATS:
             extra_env['AUTO_FORMAT_SPEC'] = AUDIO_FORMATS[afmt]
         extra_env['AUTO_BITRATE'] = br
-    logging.info(f"Download env: format={extra_env.get('AUTO_FORMAT_SPEC','?')} bitrate={extra_env.get('AUTO_BITRATE','?')}")
+    else:
+        vfmt = data.get('dl_video_format', 'mp4')
+        if vfmt in VIDEO_FORMATS:
+            extra_env['AUTO_VIDEO_FORMAT'] = VIDEO_FORMATS[vfmt]
+    logging.info(f"Download env: format={extra_env.get('AUTO_FORMAT_SPEC','?')} bitrate={extra_env.get('AUTO_BITRATE','?')} video_fmt={extra_env.get('AUTO_VIDEO_FORMAT','?')}")
 
     bot.edit_message_text(f"⏳ <b>Sedang Mendownload {label}...</b>\n📍 <code>{url}</code>", chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML")
     bot.answer_callback_query(call.id, f"Download {label} dimulai!")
