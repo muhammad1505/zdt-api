@@ -640,8 +640,8 @@ Chat: {history_context}"""
                                 import subprocess as _sp
                                 try:
                                     res = _sp.run(
-                                        [YT_DLP, query, "--print", "%(webpage_url)s", "--playlist-items", "1"],
-                                        capture_output=True, text=True, timeout=15
+                                        [YT_DLP, query, "--print", "%(webpage_url)s", "--playlist-items", "1", "--no-warnings", "--ignore-errors"],
+                                        capture_output=True, text=True, timeout=30
                                     )
                                     if res.returncode == 0 and res.stdout.strip():
                                         return res.stdout.strip().split('\n')[0]
@@ -703,7 +703,7 @@ Chat: {history_context}"""
                                 def _search_task(page=0):
                                     try:
                                         try:
-                                            res = subprocess.run([YT_DLP, f"ytsearch10:{query}", "--print", "%(title)s|%(webpage_url)s"], capture_output=True, text=True, timeout=30)
+                                            res = subprocess.run([YT_DLP, f"ytsearch10:{query}", "--print", "%(title)s|%(webpage_url)s", "--no-warnings", "--ignore-errors"], capture_output=True, text=True, timeout=30)
                                         except subprocess.TimeoutExpired:
                                             logging.warning(f"Search timeout for query: {query}")
                                             bot.reply_to(message, "⏱️ Pencarian timeout, coba lagi nanti.")
@@ -769,7 +769,7 @@ Chat: {history_context}"""
                                     try:
                                         # &sp=EgIQAw%253D%253D is YouTube's filter for Playlists
                                         search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}&sp=EgIQAw%253D%253D"
-                                        res = subprocess.run([YT_DLP, search_url, "--flat-playlist", "--print", "%(title)s|%(webpage_url)s", "--playlist-end", "5"], capture_output=True, text=True)
+                                        res = subprocess.run([YT_DLP, search_url, "--flat-playlist", "--print", "%(title)s|%(webpage_url)s", "--playlist-end", "5", "--no-warnings", "--ignore-errors"], capture_output=True, text=True, timeout=30)
                                         if res.returncode == 0 and res.stdout.strip():
                                             import telebot
                                             import html
@@ -1589,7 +1589,7 @@ def search_page_callback(call):
         try:
             import html
             try:
-                res = subprocess.run([YT_DLP, f"ytsearch10:{query}", "--print", "%(title)s|%(webpage_url)s"], capture_output=True, text=True, timeout=30)
+                res = subprocess.run([YT_DLP, f"ytsearch10:{query}", "--print", "%(title)s|%(webpage_url)s", "--no-warnings", "--ignore-errors"], capture_output=True, text=True, timeout=30)
             except subprocess.TimeoutExpired:
                 logging.warning(f"Search pagination timeout for query: {query}")
                 try:
