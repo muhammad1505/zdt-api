@@ -39,6 +39,11 @@ class TaskManager:
                 self._on_task_update(task)
             except Exception as e:
                 logger.error(f"Notification hook error: {e}")
+        try:
+            from events import get_event_bus
+            get_event_bus().emit_task_update(task)
+        except Exception as e:
+            logger.error(f"Event bus notify error: {e}")
 
     # --- DB helpers ---
     def _get_conn(self) -> sqlite3.Connection:

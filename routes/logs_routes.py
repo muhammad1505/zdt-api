@@ -136,6 +136,51 @@ def stream_logs():
     )
 
 
+@logs_bp.route('/api/tasks/stream', methods=['GET'])
+@requires_auth
+def task_events_stream():
+    """SSE endpoint for real-time task update events."""
+    def generate():
+        queue = []
+        from threading import Lock
+        lock = Lock()
+        from events import get_sse_manager
+        mgr = get_sse_manager()
+
+        def send(msg):
+            with lock:
+                queue.append(msg)
+
+        mgr.add_client(send)
+        try:
+            # Send initial keepalive
+            yield ": connected\n\n"
+            last_ping = time.time()
+            while True:
+                with lock:
+                    while queue:
+                        yield queue.pop(0)
+                        last_ping = time.time()
+                if time.time() - last_ping > 30:
+                    yield ": ping\n\n"
+                    last_ping = time.time()
+                time.sleep(0.5)
+        except GeneratorExit:
+            pass
+        finally:
+            mgr.remove_client(send)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+
+
 @logs_bp.route('/api/logs/clear', methods=['POST'])
 @requires_auth
 def clear_logs():

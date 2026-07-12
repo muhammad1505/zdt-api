@@ -219,6 +219,10 @@ def create_app():
     # Initialize task queue
     from task_queue import init_queue
     init_queue(app)
+
+    # Initialize event system
+    from events import init_events
+    init_events()
     
     # Error handlers
     @app.errorhandler(404)
